@@ -1,0 +1,13 @@
+{
+  "name": "terra-energy-map",
+  "version": "1.0.0",
+  "description": "Interactive global energy supply, demand, and bilateral trade flows intelligence map",
+  "scripts": {
+    "start": "python3 scripts/test_server.py 3000",
+    "build:data": "python3 scripts/build_energy_db.py",
+    "serve": "python3 -m http.server 3000"
+  },
+  "keywords": ["energy", "oil", "gas", "lng", "coal", "map", "visualization", "trade-flows"],
+  "author": "TerraEnergy",
+  "license": "MIT"
+}
