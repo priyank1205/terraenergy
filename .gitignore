@@ -6,8 +6,10 @@
 __pycache__/
 *.pyc
 
-# Raw source downloads (re-create with `npm run data:fetch`)
-pipeline/cache/
+# Raw source downloads (re-create with `npm run data:fetch`). UN Comtrade responses are kept in git: the public
+# API's quota makes them slow to re-fetch, and the scheduled refresh updates them a batch at a time.
+pipeline/cache/*
+!pipeline/cache/comtrade/
 
 # Node (no dependencies today, but keep it clean if any are added)
 node_modules/
