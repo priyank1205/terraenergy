@@ -28,9 +28,10 @@ MAX_METRIC_DROP = 0.05  # countries with a value, per metric
 BUILD_STAMPS = {"meta.json": ("generated",), "trade_details.json": ("generated_at",)}
 
 
-def load(name: str, text: str | None):
-    if text is None:
+def load(name: str, raw: bytes | str | None):
+    if raw is None:
         return None
+    text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
     if name.endswith(".txt"):
         return text.split("\n", 1)[-1]  # the report's first line is the build date
     data = json.loads(text)
@@ -39,8 +40,8 @@ def load(name: str, text: str | None):
     return data
 
 
-def committed(path: str) -> str | None:
-    res = subprocess.run(["git", "show", f"HEAD:{path}"], cwd=ROOT, capture_output=True, text=True)
+def committed(path: str) -> bytes | None:
+    res = subprocess.run(["git", "show", f"HEAD:{path}"], cwd=ROOT, capture_output=True)
     return res.stdout if res.returncode == 0 else None
 
 
@@ -105,12 +106,11 @@ def main() -> int:
     names = sorted(p.name for p in (ROOT / DATA).iterdir() if p.suffix in (".json", ".txt"))
     old, new = {}, {}
     for name in names:
-        path = f"{DATA}/{name}"
-        before = committed(path)
-        old[name] = load(name, before)
-        new[name] = load(name, (ROOT / path).read_text())
-        if args.restore_unchanged and before is not None and old[name] == new[name]:
-            subprocess.run(["git", "checkout", "HEAD", "--", path], cwd=ROOT, check=True)
+        path = ROOT / DATA / name
+        before, now = committed(f"{DATA}/{name}"), path.read_bytes()
+        old[name], new[name] = load(name, before), load(name, now)
+        if args.restore_unchanged and before is not None and before != now and old[name] == new[name]:
+            path.write_bytes(before)  # only a build timestamp changed: put the committed file back
     changed = [n for n in names if old[n] != new[n]]
     s_old, s_new = summarize(old), summarize(new)
     print(f"Changed data files: {', '.join(changed) or 'none'}")

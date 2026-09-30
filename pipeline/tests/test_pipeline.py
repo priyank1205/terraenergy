@@ -257,6 +257,24 @@ class RefreshGuard(unittest.TestCase):
                          load("build_report.txt", "TerraEnergy data build — 2026-10-07\nsame"))
 
 
+class StableFlowIds(unittest.TestCase):
+    def test_flows_keep_their_ids_across_builds_and_ids_are_never_reused(self):
+        from pipeline.build import assign_stable_ids, flow_key
+        flow = lambda c, f, t, mode="sea", via=None: {"c": c, "f": f, "t": t, "mode": mode, **({"via": via} if via else {})}
+        first = [flow("crude", "SAU", "IND", via=["Ras Tanura", "Sikka"]), flow("crude", "SAU", "IND", via=["Yanbu", "Sikka"]),
+                 flow("lng", "QAT", "JPN")]
+        reg = assign_stable_ids(first, {})
+        self.assertEqual([f["id"] for f in first], [1, 2, 3])
+        # Next week a bigger flow appears first and the Yanbu route disappears.
+        second = [flow("crude", "USA", "IND"), flow("crude", "SAU", "IND", via=["Ras Tanura", "Sikka"]), flow("lng", "QAT", "JPN")]
+        reg = assign_stable_ids(second, reg)
+        self.assertEqual([f["id"] for f in second], [4, 1, 3])
+        third = [flow("crude", "SAU", "IND", via=["Yanbu", "Sikka"]), flow("coal", "AUS", "JPN")]
+        assign_stable_ids(third, reg)
+        self.assertEqual([f["id"] for f in third], [2, 5])  # the Yanbu route gets its old ID back; 2 was never reused
+        self.assertEqual(flow_key(first[0]), "crude|SAU|IND|sea|Ras Tanura/Sikka|")
+
+
 class CrudeOrigins(unittest.TestCase):
     def test_crude_declared_from_non_producers_is_left_off_the_map_and_reported(self):
         from pipeline.build import drop_non_producer_crude
@@ -319,6 +337,12 @@ class BuiltOutputs(unittest.TestCase):
             self.assertTrue(set(f["years"]) <= {2024, 2025})
             self.assertIn("Comtrade", f["s"])
             self.assertIn(f["mode"], {"sea", "overland"})
+
+    def test_flow_ids_come_from_the_committed_registry(self):
+        from pipeline.build import FLOW_IDS, flow_key
+        registry = json.loads(FLOW_IDS.read_text())
+        wrong = [(flow_key(f), f["id"]) for f in self.flows["flows"] if registry.get(flow_key(f)) != f["id"]]
+        self.assertFalse(wrong[:5], "flows.json and pipeline/flow_ids.json disagree; rebuild and commit both")
 
     def test_every_crude_exporter_produces_crude(self):
         prod = self.latest["oil_prod_kbd"]

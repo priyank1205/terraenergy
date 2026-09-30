@@ -194,6 +194,7 @@ pipeline/
   fetch_sources.py       downloads + checksums; quota-aware rolling Comtrade refresh
   build.py               joins sources, allocates, routes, validates, writes public/data/
   check_data.py          guards an unattended refresh against broken downloads
+  flow_ids.json          permanent flow IDs (commodity, partners, route → ID) so shared flow links survive updates
   sources/               EI, EIA, OWID, Comtrade parsers
   lib/                   countries, sea-lane graph and router, TopoJSON helpers
   curated/context.py     chokepoints, timeline, market snapshot, infrastructure (all sourced)

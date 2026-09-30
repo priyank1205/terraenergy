@@ -5,6 +5,7 @@
 # - EIA, OWID and PortWatch are downloaded in full each time; the EI workbook is pinned by checksum.
 # - Comtrade: only responses retrieved more than 28 days ago are re-fetched, at most `budget` calls per run.
 #   The rest of the cache is committed, so each week continues where the last one stopped.
+# - pipeline/flow_ids.json gives every flow a permanent ID, so shared #sel=flow:ID links survive new data.
 # - pipeline/check_data.py holds back a build that looks like a broken download; the failed run is emailed to the
 #   repository owner and the live site stays as it was.
 name: Refresh data
@@ -58,7 +59,7 @@ jobs:
       - name: Commit
         id: commit
         run: |
-          git add public/data pipeline/cache/comtrade
+          git add public/data pipeline/cache/comtrade pipeline/flow_ids.json
           if git diff --cached --quiet; then
             echo "Nothing new to publish."
             echo "changed=false" >> "$GITHUB_OUTPUT"

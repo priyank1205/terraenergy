@@ -48,6 +48,7 @@ from pipeline.sources import bilateral as BT  # noqa: E402
 
 CACHE = ROOT / "pipeline" / "cache"
 OUT = ROOT / "public" / "data"
+FLOW_IDS = ROOT / "pipeline" / "flow_ids.json"  # committed: every flow identity ever built → its permanent ID
 YEARS = list(range(2000, 2026))
 REPORT: list[str] = []
 
@@ -480,6 +481,27 @@ def drop_non_producer_crude(flows, hist):
     return kept, excluded
 
 
+def flow_key(f) -> str:
+    """What makes a flow the same flow from one build to the next: commodity, partners and route."""
+    return "|".join([f["c"], f["f"], f["t"], f["mode"], "/".join(f.get("via") or []), f.get("corridor") or ""])
+
+
+def assign_stable_ids(flows, registry):
+    """Give each flow the ID it had in earlier builds, so shared links (#sel=flow:ID) keep pointing at it when
+    new data adds or removes flows. New flows get new IDs; an ID is never reused. Returns the updated registry."""
+    registry = dict(registry)
+    next_id = max(registry.values(), default=0) + 1
+    for f in flows:
+        key = flow_key(f)
+        if key not in registry:
+            registry[key] = next_id
+            next_id += 1
+        f["id"] = registry[key]
+    if len({f["id"] for f in flows}) != len(flows):
+        raise ValueError("Two flows share an identity; extend flow_key() so each route part is distinct")
+    return registry
+
+
 def _weights_for(pairs_weight, candidates_from, candidates_to):
     w = {}
     for x in candidates_from:
@@ -707,8 +729,7 @@ def main() -> int:
     records = CT.load(CACHE / "comtrade", COMTRADE_IMPORTERS, COMTRADE_MIRROR_IMPORTERS, COMTRADE_LNG_IMPORTERS)
     log(f"  Comtrade records: {len(records)}")
     ct_flows, records = build_comtrade_flows(records, hist)
-    kept, non_producer_crude = drop_non_producer_crude(ct_flows, hist)
-    left_off = set(ct_flows) - set(kept)
+    ct_flows, non_producer_crude = drop_non_producer_crude(ct_flows, hist)
     if non_producer_crude:
         pairs = sorted(((exp, imp, v) for imp, e in non_producer_crude.items() for exp, v in e["from"].items()),
                        key=lambda x: -x[2])
@@ -774,10 +795,6 @@ def main() -> int:
         add_flow(exp, imp, commodity, f["v"], f["year"], src_label, f["est"], ann.get("note"), ann.get("route_from"))
     for (exp, imp, commodity), v in sorted(gas.items(), key=lambda kv: -kv[1]):
         add_flow(exp, imp, commodity, v, 2025, "EI")
-    # Crude from non-producers was routed like the rest so it still consumes its IDs; removing it afterwards
-    # leaves gaps rather than renumbering, which keeps shared flow links valid.
-    flows = [f for f in flows if (f["f"], f["t"], f["c"]) not in left_off]
-    # Append to preserve every existing energy-flow ID / shared URL.
     def route_rare_earths(exp, imp):
         try:
             return router.route(exp, imp, "rare_earths")
@@ -788,6 +805,7 @@ def main() -> int:
     flows.extend(REE.build_flows(CACHE / "comtrade", label_points, fid + 1, route_rare_earths))
     if unroutable:
         raise RouteError("Trade with no plausible route — add a port, gateway or corridor:\n  " + "\n  ".join(sorted(set(unroutable))))
+    flow_ids = assign_stable_ids(flows, json.loads(FLOW_IDS.read_text()) if FLOW_IDS.exists() else {})
     source_estimated_pairs = {(r["exporter"], r["importer"], r["commodity"]) for r in records if r.get("weight_estimated")}
     for f in flows:
         if f["s"].startswith("Comtrade") and (f["f"], f["t"], f["c"]) in source_estimated_pairs:
@@ -920,6 +938,7 @@ def main() -> int:
                                                if v >= 0.01}}
                                 for imp, e in sorted(non_producer_crude.items()) if e["kbd"] >= 0.05}}},
                          "flows": flows})
+    FLOW_IDS.write_text(json.dumps(flow_ids, indent=0, sort_keys=True) + "\n")
 
     # chokepoints.json (+ PortWatch)
     pw = json.loads((CACHE / "portwatch_chokepoints_daily.json").read_text())
