@@ -1,13 +1,22 @@
 {
   "name": "terra-energy-map",
-  "version": "1.0.0",
-  "description": "Interactive global energy supply, demand, and bilateral trade flows intelligence map",
+  "version": "2.0.0",
+  "description": "Interactive map of world energy and rare earth trade (2025 data, with 2024 fallback), with live chokepoint shipping and the 2026 Strait of Hormuz disruption.",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "start": "python3 scripts/test_server.py 3000",
-    "build:data": "python3 scripts/build_energy_db.py",
-    "serve": "python3 -m http.server 3000"
+    "start": "python3 scripts/serve.py 3000",
+    "data": "python3 pipeline/fetch_sources.py && python3 pipeline/build.py",
+    "data:fetch": "python3 pipeline/fetch_sources.py",
+    "data:refresh": "python3 pipeline/fetch_sources.py --refresh && python3 pipeline/build.py",
+    "data:build": "python3 pipeline/build.py",
+    "test": "node --test \"tests/*.test.js\" && python3 -m unittest discover -s pipeline/tests -t .",
+    "test:js": "node --test \"tests/*.test.js\"",
+    "test:py": "python3 -m unittest discover -s pipeline/tests -t ."
   },
-  "keywords": ["energy", "oil", "gas", "lng", "coal", "map", "visualization", "trade-flows"],
-  "author": "TerraEnergy",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["energy", "oil", "lng", "natural-gas", "coal", "rare-earths", "trade-flows", "chokepoints", "map", "d3"],
   "license": "MIT"
 }

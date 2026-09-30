@@ -1,136 +1,173 @@
-# ⚡ TerraEnergy: Global Energy Supply, Demand & Flow Map
+# TerraEnergy — world energy flows
 
-**TerraEnergy** is a lightweight, high-performance interactive web application that acts as the definitive one-stop product for visualizing global energy supply, demand, and bilateral trade flows across **Crude Oil & Refined Products**, **Natural Gas & LNG**, **Coal**, and **Clean Energy**.
+An interactive map of who produces, consumes and trades the world's **oil, natural gas and coal**, plus **rare earth metals and compounds**, built on the
+latest complete year of official data (**2025**). It is paired with live shipping data for the
+**2026 Strait of Hormuz closure**.
 
-Built with an ultra-responsive dark cyber-cartography interface inspired by Bloomberg Terminal and modern geospatial tools, it delivers sub-second load times with zero external database dependencies.
+- **Trade flows** — about 2,500 bilateral flows of crude, oil products, LNG, pipeline gas and coal, routed along real
+  sea lanes and pipelines. Each flow shows the chokepoints it passes through and its voyage time.
+- **Rare earth flows** — 337 country-to-country trade links in tonnes, with country partners, rankings and CSV export.
+  Choose **Rare earths** in Trade flows, or open `/#lens=flows&c=rare_earths`. Routes are modelled as container shipping
+  between main ports, or rail and road between neighbours with open borders.
+- **Country trade** — choose two countries to see energy and rare earth products in both directions, with HS product
+  codes, tonnes, dollar values and downloadable original records. The seller's export declaration and buyer's import
+  declaration are shown separately, with publication dates and estimated weights. Switch between latest annual and
+  monthly reports. Open **Country trade** in the header, a country profile, or a flow's product details.
+- **Country data** — 24 map layers (production, demand, import dependence, Hormuz exposure, low-carbon power,
+  CO₂ per person, …). A year slider covers 2000–2025, and every number is labelled with its source and year.
+- **Chokepoints** — daily tanker transits from IMF PortWatch (to 20 Sep 2026) for Hormuz, Malacca, Suez,
+  Bab el-Mandeb, the Cape and others. Each has EIA volume history, the importers that depend on it, and bypass options.
+- **Country profiles** — balances, trade partners with market shares, supplier concentration, energy and power
+  mix, 2000–2025 trends and monthly 2026 production.
 
----
+Everything is linkable (the URL encodes the view), searchable (<kbd>⌘K</kbd>), keyboard-driven, themeable
+(light/dark) and works on a phone.
 
-## 🚀 Quick Start
-
-### 1. Launch the Application
-Simply start the lightweight local server using Python or npm:
+## Quick start
 
 ```bash
-# Using npm
-npm start
-
-# Or using Python directly
-python3 scripts/test_server.py 3000
-
-# Or standard HTTP server
-python3 -m http.server 3000
+npm start                # serves on http://localhost:3000 (Python 3, no npm install needed)
 ```
 
-Open your browser and navigate to:
-👉 **[http://localhost:3000](http://localhost:3000)**
+The app is plain ES modules plus a vendored copy of d3 and topojson-client. There is no build step and nothing to
+install for the saved map. Any static web server serves the map and saved trade records (use HTTP, not a `file://` URL).
+Live country-trade checks require `npm start` and Python `requests`; that server provides the `/api/trade` endpoint.
 
----
+## Where the numbers come from
 
-## 🌟 Key Features
+| Layer | Source | Vintage |
+|---|---|---|
+| Country balances (oil, gas, coal, energy, power, CO₂) | [Energy Institute — Statistical Review of World Energy 2026](https://www.energyinst.org/statistical-review) | 2025 data, published 30 Jun 2026 |
+| Countries EI groups together, population, GDP | [U.S. EIA International Energy Statistics](https://www.eia.gov/international/data/world) | mostly 2024 (oil 2025); monthly production to May 2026 |
+| Electricity mix | [Ember via Our World in Data](https://ourworldindata.org/energy) | to 2025 (2024 for most smaller countries) |
+| Crude, product and coal trade | [UN Comtrade](https://comtradeplus.un.org/) (HS 2709, 2710, 2701) | 2025, or 2024 where 2025 isn't reported yet |
+| Rare earth metals and compounds | [UN Comtrade](https://comtradeplus.un.org/) (HS 280530, 284610, 284690) | 2025, with 2024 fallback; each flow shows its year |
+| Country-to-country product details | UN Comtrade, six-digit HS customs records | Latest published annual or monthly dataset checked separately for each reporter; release/retrieval dates shown |
+| LNG and pipeline-gas trade | EI 2025 trade matrices (578.5 bcm LNG, 567.6 bcm pipeline) | 2025 |
+| Chokepoint traffic | [IMF PortWatch](https://portwatch.imf.org/) daily transits | to 20 Sep 2026 |
+| Chokepoint volumes | [EIA World Oil Transit Chokepoints](https://www.eia.gov/international/content/analysis/special_topics/World_Oil_Transit_Chokepoints) | 2020–1H25 (updated Mar 2026) |
+| 2025–26 events, market snapshot | EIA, IEA, Reuters, Al Jazeera, CNBC and others (cited in the app) | as of 23 Sep 2026 |
+| Boundaries | Natural Earth via [world-atlas](https://github.com/topojson/world-atlas) | 1:50m / 1:110m |
 
-### 1. Interactive 2D Flat Map & 3D Spinning Globe
-- **2D Cartographic View**: Natural Earth / Equal-area projection showing all global trade corridors without distortion or clipping.
-- **3D Interactive Globe**: Orthographic projection with spherical rotation, mouse-drag inertial rotation, and an auto-rotate toggle.
-- **High-DPI Canvas Rendering**: Silky-smooth 60 FPS performance on Retina / 4K displays.
+## How it works
 
-### 2. Animated Geodesic Trade Flow Engine
-- Real-time particle animation streaming along geodesic curves from exporting nations to importing nations.
-- Speed and particle density proportional to trade volume.
-- Color-coded commodity arteries:
-  - 🛢️ **Oil & Petroleum Liquids**: Golden Amber (`#f59e0b`)
-  - 🔥 **Natural Gas & LNG**: Electric Cyan (`#06b6d4`)
-  - ⛏️ **Coal & Solid Fuels**: Steel Charcoal (`#94a3b8`)
-- **Global Arteries Mode**: Visualizes the world's most critical energy trade corridors simultaneously.
+`pipeline/` turns the raw sources into the compact JSON files the app reads (`public/data/`):
 
-### 3. Country Intelligence Profiles (Inflows & Outflows)
-Click any country on the map or search via the autocomplete search bar to inspect:
-- **Daily Non-Renewable Balance Cards**:
-  - **Oil**: Daily Consumption (b/d & kb/d) vs Daily Production (b/d & kb/d) with self-sufficiency ratio and net surplus/deficit status.
-  - **Natural Gas**: Daily Consumption (Bcf/d or bcm/y) vs Production.
-  - **Coal**: Consumption vs Production (Mt/y).
-  - **Total Primary Energy**: Annual TWh, per capita ranking, electricity generation, and GHG emissions.
-- **Supply Origins (Where it gets its supply from - Imports)**:
-  - Visual breakdown of top supplier nations, exact shipment volumes, transport type (Pipeline vs Tanker), and % share of total imports.
-  - Interactive click to jump directly to any supplier!
-- **Supply Destinations (Where it supplies energy to - Exports)**:
-  - Active for producing/exporting nations, highlighting destination customers and volumes.
-- **Interactive Energy Mix Donut Chart**:
-  - Complete primary energy breakdown: Oil, Natural Gas, Coal, Nuclear, Hydro, Solar & Wind, Biofuels.
-- **Historical Trajectory (2000–2024)**:
-  - Multi-decade sparkline trends for oil and gas supply and demand.
+1. **Balances.** Uses EI physical units (kb/d, bcm, Mt, EJ, TWh) for the ~80 countries EI lists, and EIA for the rest.
+   Derived metrics include net balances, import dependence and per-capita values.
+2. **Trade.**
+   - Customs weights from importers' declarations are converted to barrels using each exporter's typical crude
+     density (API gravity), so heavy Canadian and light Kazakh barrels are not treated alike.
+   - Non-reporting importers (Taiwan, Vietnam, UAE, Bangladesh, …) come from partners' export declarations, after
+     dropping physically implausible rows.
+   - Gas uses EI's matrices, and EI's regional aggregates are split with Comtrade shares or physical pipeline
+     landing points.
+   - Rare earths use product weights from 45 queried importers, supplemented by export reports from 14 suppliers
+     when an importer has no report for that product group. Import and mirror declarations are never added for
+     the same importer/product. Missing weights are omitted; weights estimated by Comtrade are flagged.
+     The bundled sample covers 42 exporters and 69 importers after omitting flows below one tonne.
+3. **Routing.**
+   - `pipeline/lib/sealanes.py` is a hand-built graph of about 450 sea-lane waypoints. An automated test checks that
+     no lane crosses land.
+   - Each seaborne flow takes the cheapest path between the exporter's and importer's terminals. The costs reflect
+     2024–25 behaviour: Western-linked shipping avoided the Red Sea, VLCCs and most LNG avoided Panama, and cargoes
+     split across Saudi, Emirati and Russian terminals by destination.
+   - Routed 2025 volumes reproduce EIA's Suez (4.9 mb/d) and Bab el-Mandeb (4.2 mb/d) figures, and cover about 80%
+     of Hormuz and Malacca. The remainder is trade that customs data cannot see.
+4. **Context.** PortWatch series, EIA monthly production and a curated, sourced timeline
+   (`pipeline/curated/context.py`).
 
-### 4. Strategic Maritime Chokepoints
-Click any of the world's critical maritime bottlenecks to filter and highlight transiting energy routes:
-- **Strait of Hormuz** (~20.5M b/d oil + >20% global LNG)
-- **Strait of Malacca** (~16M b/d)
-- **Suez Canal & SUMED Pipeline** (~8.8M b/d)
-- **Bab-el-Mandeb** (~7.1M b/d)
-- **Turkish Straits (Bosphorus/Dardanelles)** (~3.5M b/d)
-- **Panama Canal** (~1.5M b/d & major US-Asia LNG artery)
-- **Danish Straits** (~3.2M b/d Baltic outlet)
+`public/data/build_report.txt` records every reconciliation check from the last build.
 
-### 5. Choropleth Heatmap Overlays
-Color countries worldwide by:
-- Oil Daily Consumption
-- Oil Daily Production
-- Natural Gas Consumption
-- Natural Gas Production
-- Coal Consumption
-- Clean & Low-Carbon Share (%)
-- Net Balance (Green = Net Exporter, Orange = Net Importer)
+### Known limitations
 
-### 6. Country Side-by-Side Comparison Tool
-Compare any two countries side-by-side (e.g., United States vs. China, Saudi Arabia vs. Russia, Germany vs. France) with comparative energy balances and bilateral trade relations.
+- **Freshness is source-specific.** Countries publish at different times. The explorer checks the publication catalogue
+  before retrieving a pair, caches successful checks for six hours, and offers **Check for updates** to bypass the cache.
+  Annual searches cover the last five completed years; monthly searches cover the last 36 completed months. The latest
+  published period is retained even if it contains no declarations for the selected pair. Annual and monthly figures
+  are not interchangeable. See [UN Comtrade data availability](https://uncomtrade.org/docs/data-availability/).
+- The 27 September 2026 bulk refresh updated EIA, OWID, PortWatch and part of Comtrade before the public API quota
+  stopped it. Remaining cached files were retained. The Sources panel distinguishes timestamped downloads from older
+  files without retrieval timestamps; rebuilding does not certify all sources as newly checked. Failed live checks
+  retain dated saved records and explicitly identify gaps, never substituting zero trade.
+- **Product details are customs categories**, not shipment manifests or individual elemental contents. The explorer
+  preserves both reporters' declarations, including value-only and small trades. It never averages mirror reports or
+  imputes missing weights from prices. Import/export differences can reflect CIF/FOB valuation, timing and reporting;
+  compare matching periods. CSV files retain original numerical precision and provenance.
+- Rare earth quantities are **tonnes of traded metals and compounds**, not contained rare earth oxide or mine
+  production. HS 280530 includes scandium and yttrium; HS 284610 includes cerium compounds. Ores and finished
+  magnets are excluded. Coverage is incomplete, reporting years may differ, and re-exports can count material
+  more than once. Customs records do not state the transport mode, so routes are modelled the same way as energy
+  trade (some high-value lots actually travel by air). Rare earths are excluded from **All energy**, whose scale is
+  energy content. The product scope follows the
+  [IMF's metals-and-compounds grouping](https://www.imf.org/-/media/files/publications/weo/2026/april/english/ch1onlineannex.pdf).
+- LPG (HS 2711) isn't in the oil-product flows, so US and Gulf product exports are understated.
+- China declares much Iranian crude as Malaysian. That flow is kept as reported, flagged, and routed from Kharg Island.
+- Taiwan's crude import sources are incomplete, because Saudi Arabia books large volumes to "Other Asia, nes".
+- Russian exports are seen only through importers' declarations.
+- Transport modes are modelled, because customs records do not state them (see `pipeline/lib/overland.py`).
+  Neighbours trade overland only across borders that carry freight; closed or impassable borders such as
+  China–India and India–Pakistan are routed by sea, landlocked countries use their usual gateway port, and crude is
+  a pipeline only where a cross-border pipeline exists. The build fails if a trade has no plausible route.
+- Pipeline, border-crossing and terminal routes are schematic.
+- The 2026 situation layer is a dated snapshot. Refresh it as described below.
 
-### 7. Unit Converter
-Toggle instantly across the whole UI between:
-- **Daily Units**: Barrels per Day (`b/d`, `kb/d`) and Billion Cubic Feet per Day (`Bcf/d`)
-- **Annual Physical Units**: Million Tonnes (`Mt/y`) and Billion Cubic Metres (`bcm/y`)
-- **Energy Units**: Terawatt-hours (`TWh`)
+## Updating the data
 
----
-
-## 📊 Data Sources & Compilation Pipeline
-
-The data is compiled from the latest, authoritative global energy reports:
-1. **Energy Institute (EI) Statistical Review of World Energy (2024/2025 Edition)** (the global industry standard, formerly BP Statistical Review).
-2. **OPEC Annual Statistical Bulletin 2024** (Table 5.1 & 5.2 Crude Oil Exports by Destination).
-3. **Ember Global Electricity Review 2024**.
-4. **U.S. Energy Information Administration (EIA) International Energy Statistics**.
-
-### To Recompile or Update the Data:
-Run the automated Python pipeline:
 ```bash
-python3 scripts/build_energy_db.py
-```
-This processes `owid-energy-data.csv` and compiles the complete `public/data/energy_db.json` in under 2 seconds.
-
----
-
-## 📁 Project Structure
-
-```
-world energy map/
-├── index.html                   # Modern responsive entry point
-├── package.json                 # Project scripts and metadata
-├── README.md                    # Documentation
-├── scripts/
-│   ├── build_energy_db.py       # Python pipeline compiling raw OWID & trade data
-│   └── test_server.py           # HTTP server with auto MIME-types
-├── public/
-│   └── data/
-│       ├── world-110m.json      # Optimized World GeoJSON geometry (177 countries)
-│       └── energy_db.json       # Consolidated 2024 energy database (220 countries, 186 flows)
-└── src/
-    ├── app.js                   # Master coordinator & state management
-    ├── map-engine.js            # Dual 2D/3D projection, canvas flow particles, choropleth
-    ├── ui-panel.js              # Country drawer, inflows/outflows, charts, comparisons
-    ├── chokepoints.js           # Strategic maritime bottlenecks dataset & filters
-    └── styles.css               # Bloomberg-style dark glassmorphism theme
+npm run data:refresh     # refresh EIA, OWID, Comtrade, PortWatch and rebuild on success
+npm run data             # fetch anything missing, then rebuild (≈10 s once cached)
+npm run data:build       # rebuild from the cache only
+python3 pipeline/fetch_sources.py --only rare-earths  # fetch just rare earth trade
+python3 pipeline/sources/bilateral.py --pair CHN USA --refresh  # save latest annual product reports
+python3 pipeline/sources/bilateral.py --pair CHN USA --frequency M --refresh  # latest monthly reports
 ```
 
----
+Needs Python 3.10+ with `requests` and `openpyxl`. Raw downloads are cached in `pipeline/cache/` (≈80 MB, git-ignored).
+If a bulk download stops at the public API quota, existing successful downloads remain intact. `npm run data:build`
+publishes that mixed cache with its actual retrieval dates. A full refresh requires the source quota to be available.
 
-## 🛡️ License
-MIT License. Data subject to terms of the Energy Institute and original source providers.
+- **New Statistical Review:** update the EI snapshot URL and md5 in `pipeline/fetch_sources.py`.
+- **2026 situation layer:** edit the chokepoint statuses, timeline and market snapshot in
+  `pipeline/curated/context.py`, and bump `AS_OF`.
+
+## Tests
+
+```bash
+npm test                 # node --test (formatting, URL state, selectors) + Python unittest (routing, conversions, reconciliation)
+```
+
+## Project structure
+
+```
+index.html               app shell (no build step)
+src/
+  main.js                controller: state → map, panels, legend; keyboard; export
+  map.js                 canvas renderer on d3-geo (Equal Earth + globe), flows, particles, picking
+  data.js                data loading, indexes and pure selectors
+  store.js               observable state, synced to the URL hash
+  format.js              units and number formatting
+  colors.js              theme-aware palettes and choropleth scales
+  charts.js              small SVG charts
+  trade.js               original customs record selectors, CSV and live/saved loaders
+  ui/trade.js            country-to-country product explorer
+  ui/panel.js            overview, country, flow, chokepoint and compare views
+  ui/controls.js         rail, legend, banner, tooltip, command palette, sources modal
+  styles/app.css         design tokens (light/dark) and components
+vendor/                  d3 7.9 and topojson-client 3.1 (UMD)
+pipeline/
+  fetch_sources.py       downloads + checksums
+  build.py               joins sources, allocates, routes, validates, writes public/data/
+  sources/               EI, EIA, OWID, Comtrade parsers
+  lib/                   countries, sea-lane graph and router, TopoJSON helpers
+  curated/context.py     chokepoints, timeline, market snapshot, infrastructure (all sourced)
+  tests/                 pipeline tests
+public/data/             generated data the app loads
+tests/                   JavaScript unit tests
+scripts/serve.py         local server with gzip and bounded UN Comtrade lookup endpoint
+```
+
+## License and attribution
+
+Code: MIT. The data remains subject to its providers' terms. Statistical Review data © Energy Institute 2026. UN
+Comtrade, U.S. EIA, Ember (CC BY 4.0), IMF PortWatch and Natural Earth (public domain) are credited in the app.

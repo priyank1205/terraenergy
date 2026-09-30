@@ -1,218 +1,109 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TerraEnergy — Global Energy Supply, Demand & Trade Flow Intelligence Map</title>
-  <meta name="description" content="One-stop interactive intelligence product for global energy supply, demand, and bilateral trade flows across oil, natural gas, coal, and renewables." />
-  <link rel="stylesheet" href="src/styles.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>TerraEnergy — World Energy Flows</title>
+  <meta name="description" content="Interactive map of world oil, gas and coal supply, demand and trade in 2025 — with live chokepoint traffic and the 2026 Strait of Hormuz disruption. Built on Energy Institute, EIA, UN Comtrade, Ember and IMF PortWatch data." />
+  <meta name="theme-color" content="#0a0e13" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f4f6f8" media="(prefers-color-scheme: light)" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230c1218'/%3E%3Cpath d='M5 19c6-8 16-8 22 0' stroke='%23f5a524' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3Cpath d='M7 13c5-4 13-4 18 0' stroke='%2328c6e8' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <script>
+    // Apply the saved/system theme before first paint to avoid a flash.
+    (function () {
+      try {
+        var t = localStorage.getItem("te-theme");
+        if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = t;
+      } catch (e) { document.documentElement.dataset.theme = "dark"; }
+    })();
+  </script>
+  <link rel="stylesheet" href="src/styles/app.css" />
+  <script src="vendor/d3.v7.9.0.min.js" defer></script>
+  <script src="vendor/topojson-client.v3.1.0.min.js" defer></script>
+  <script type="module" src="src/main.js"></script>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 4-6 2.5v13L9 17l6 3 6-2.5v-13L15 7 9 4z"/><path d="M9 4v13M15 7v13"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+    <symbol id="i-compare" viewBox="0 0 24 24"><path d="M8 7h12M16 3l4 4-4 4M16 17H4M8 13l-4 4 4 4"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+    <symbol id="i-flow" viewBox="0 0 24 24"><path d="M3 17c4-8 14-8 18 0"/><path d="M17 13l4 4-4 1"/></symbol>
+    <symbol id="i-choro" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M9 10l2 2-2 2"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M11 10l-2 2 2 2"/></symbol>
+    <symbol id="i-choke" viewBox="0 0 24 24"><path d="M4 5c5 4 5 10 0 14M20 5c-5 4-5 10 0 14"/><path d="M12 4v16"/></symbol>
+  </svg>
 
-  <!-- ========================================================================
-       Top Navigation & Control Bar (Frosted Glass)
-       ======================================================================== -->
-  <header class="nav-header">
-    <!-- Brand -->
-    <div class="brand-section">
-      <div class="brand-logo">⚡</div>
-      <div>
-        <h1 class="brand-title">TerraEnergy</h1>
-        <div class="brand-subtitle">Global Supply, Demand & Flow Map</div>
+  <div id="app">
+    <div id="map" role="application" aria-label="World energy map. Use the search (press slash) to select countries."></div>
+
+    <header class="topbar glass" role="banner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14.5" fill="var(--panel-3)" stroke="var(--border-strong)"/><path d="M5 19c6-8 16-8 22 0" stroke="var(--c-crude)" stroke-width="2.6" fill="none" stroke-linecap="round"/><path d="M7 13c5-4 13-4 18 0" stroke="var(--c-lng)" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+        <div>
+          <div class="brand-name">TerraEnergy</div>
+          <div class="brand-sub">Energy & rare earths · dated official reports</div>
+        </div>
+      </div>
+      <nav class="lens-tabs" role="tablist" aria-label="Map view">
+        <button class="lens-tab" role="tab" data-lens="flows" aria-selected="true"><svg class="icon"><use href="#i-flow"/></svg><span class="t">Trade flows</span></button>
+        <button class="lens-tab" role="tab" data-lens="balances" aria-selected="false"><svg class="icon"><use href="#i-choro"/></svg><span class="t">Country data</span></button>
+        <button class="lens-tab" role="tab" data-lens="chokepoints" aria-selected="false"><svg class="icon"><use href="#i-choke"/></svg><span class="t">Chokepoints</span></button>
+      </nav>
+      <div class="topbar-spacer"></div>
+      <button class="btn trade-trigger" id="btn-trade" aria-label="Trade between two countries" title="Products traded between two countries"><svg class="icon"><use href="#i-compare"/></svg><span>Country trade</span></button>
+      <button class="search-trigger" id="search-trigger" aria-label="Search countries, chokepoints and layers">
+        <svg class="icon"><use href="#i-search"/></svg><span>Search countries, chokepoints…</span><span class="kbd">⌘K</span>
+      </button>
+      <button class="icon-btn" id="btn-projection" aria-label="Switch to globe" title="Globe / flat map (G)"><svg class="icon"><use href="#i-globe"/></svg></button>
+      <button class="icon-btn" id="btn-theme" aria-label="Toggle light or dark theme" title="Theme (T)"><svg class="icon"><use href="#i-sun"/></svg></button>
+      <button class="icon-btn" id="btn-share" aria-label="Copy a link to this view" title="Copy link"><svg class="icon"><use href="#i-link"/></svg></button>
+      <button class="icon-btn" id="btn-about" aria-label="About the data and methods" title="Data & methods"><svg class="icon"><use href="#i-info"/></svg></button>
+    </header>
+
+    <div id="banner" class="banner glass hidden" role="status"></div>
+    <aside id="rail" class="rail glass" aria-label="Map controls"></aside>
+    <aside id="panel" class="panel glass" aria-label="Details">
+      <div class="sheet-handle" role="button" aria-label="Expand or collapse details"></div>
+      <div class="panel-head" id="panel-head"></div>
+      <div class="panel-body" id="panel-body"></div>
+    </aside>
+    <div id="legend" class="legend glass" aria-live="polite"></div>
+    <div class="map-ctrls">
+      <div class="glass">
+        <button class="icon-btn hidden" id="btn-panel" aria-label="Show details panel" title="Show panel"><svg class="icon"><use href="#i-expand"/></svg></button>
+        <button class="icon-btn hidden" id="btn-layers" aria-label="Map controls" aria-pressed="false" title="Map controls"><svg class="icon"><use href="#i-layers"/></svg></button>
+        <button class="icon-btn" id="btn-zoom-in" aria-label="Zoom in"><svg class="icon"><use href="#i-plus"/></svg></button>
+        <button class="icon-btn" id="btn-zoom-out" aria-label="Zoom out"><svg class="icon"><use href="#i-minus"/></svg></button>
+        <button class="icon-btn" id="btn-reset" aria-label="Reset view"><svg class="icon"><use href="#i-home"/></svg></button>
       </div>
     </div>
-
-    <!-- Commodity Filter Pills -->
-    <nav class="commodity-pills" aria-label="Commodity Filters">
-      <button class="pill-btn active" data-commodity="all" title="View all energy flows">
-        <span class="pill-dot dot-all"></span> All Energy
-      </button>
-      <button class="pill-btn" data-commodity="oil" title="View crude oil and petroleum product flows">
-        <span class="pill-dot dot-oil"></span> Oil & Products
-      </button>
-      <button class="pill-btn" data-commodity="gas" title="View natural gas pipeline and LNG flows">
-        <span class="pill-dot dot-gas"></span> Gas & LNG
-      </button>
-      <button class="pill-btn" data-commodity="coal" title="View coal and solid fuel flows">
-        <span class="pill-dot dot-coal"></span> Coal
-      </button>
-    </nav>
-
-    <!-- Header Actions (Global Arteries, Search, Projection, Units, Choropleth) -->
-    <div class="header-actions">
-      <!-- Global Arteries Toggle -->
-      <button id="global-arteries-btn" class="tool-btn" title="Toggle global mega-trade corridors on/off">
-        🌐 Global Arteries: Off
-      </button>
-
-      <!-- Search Autocomplete -->
-      <div class="search-box">
-        <span class="search-icon">🔍</span>
-        <input 
-          type="text" 
-          id="search-input" 
-          class="search-input" 
-          placeholder="Search country..." 
-          autocomplete="off"
-        />
-        <div id="search-dropdown" class="search-dropdown"></div>
-      </div>
-
-      <!-- Choropleth Heatmap Layer Selector -->
-      <select id="choropleth-select" class="select-dropdown" title="Color countries by chosen metric">
-        <option value="none">🗺️ Map: Natural Land</option>
-        <option value="oil_cons">🛢️ Heatmap: Oil Daily Consumption</option>
-        <option value="oil_prod">🛢️ Heatmap: Oil Daily Production</option>
-        <option value="gas_cons">🔥 Heatmap: Gas Consumption</option>
-        <option value="gas_prod">🔥 Heatmap: Gas Production</option>
-        <option value="coal_cons">⛏️ Heatmap: Coal Consumption</option>
-        <option value="clean_share">🌱 Heatmap: Clean Energy Share (%)</option>
-        <option value="net_balance">⚖️ Heatmap: Net Exporter vs Importer</option>
-      </select>
-
-      <!-- Unit Selector -->
-      <select id="unit-select" class="select-dropdown" title="Change display units">
-        <option value="daily">Units: Daily (b/d, Bcf/d)</option>
-        <option value="annual">Units: Annual (Mt, bcm)</option>
-        <option value="energy">Units: Energy (TWh)</option>
-      </select>
-
-      <!-- Projection Switcher (2D / 3D) -->
-      <button id="projection-toggle-btn" class="tool-btn" title="Toggle between 2D Flat Map and 3D Spinning Globe">
-        🗺️ Flat Map
-      </button>
-    </div>
-  </header>
-
-  <!-- ========================================================================
-       Quick Country Jump Chips Bar
-       ======================================================================== -->
-  <div class="quick-chips-bar">
-    <div class="quick-chips-label">⚡ Explore Energy Powerhouses:</div>
-    <div id="quick-chips-container" style="display: flex; gap: 8px;"></div>
+    <div class="attribution">Data: EI, EIA, UN Comtrade, Ember, IMF PortWatch · <button id="btn-about-2">Sources &amp; methods</button></div>
+    <div id="tooltip" class="tooltip glass" role="tooltip"></div>
   </div>
 
-  <!-- ========================================================================
-       Main Map Viewport (Dual Canvas Layering)
-       ======================================================================== -->
-  <main id="map-viewport">
-    <!-- Base Map Polygons & Choropleth -->
-    <canvas id="map-canvas"></canvas>
-    <!-- Animated Particle Energy Trade Flow Overlay -->
-    <canvas id="flow-canvas"></canvas>
-    <!-- Country Hover Tooltip -->
-    <div id="map-tooltip" class="map-tooltip"></div>
-    <!-- Floating Route Inspector Card -->
-    <div id="route-inspector" class="route-inspector-card"></div>
-  </main>
-
-  <!-- ========================================================================
-       Bottom-Left Summary Bar: Global Energy Pulse, Time Machine & Chokepoints
-       ======================================================================== -->
-  <aside class="pulse-bar" id="pulse-bar">
-    <div class="pulse-header">
-      <div class="pulse-title">
-        <span class="pulse-indicator"></span> Global Energy Flow Pulse (EI 2024)
-      </div>
-      <div style="font-size: 10px; color: var(--text-dim);">Live Cartographic Feed</div>
-    </div>
-
-    <!-- Live Metrics Grid -->
-    <div class="pulse-stats-grid">
-      <div class="pulse-stat-card">
-        <div class="pulse-stat-label">Global Oil Demand</div>
-        <div class="pulse-stat-val" id="pulse-oil-val">99.7M <span class="pulse-stat-unit">b/d</span></div>
-      </div>
-      <div class="pulse-stat-card">
-        <div class="pulse-stat-label">Global Gas Demand</div>
-        <div class="pulse-stat-val" id="pulse-gas-val">3,612 <span class="pulse-stat-unit">bcm/y</span></div>
-      </div>
-      <div class="pulse-stat-card">
-        <div class="pulse-stat-label">Global Coal Demand</div>
-        <div class="pulse-stat-val" id="pulse-coal-val">5,553 <span class="pulse-stat-unit">Mt/y</span></div>
-      </div>
-    </div>
-
-    <!-- Time Machine Playhead (2000 - 2024) -->
-    <div class="time-machine-row">
-      <button id="time-play-btn" class="time-play-btn" title="Play historical energy evolution 2000-2024">
-        ▶ Play Timeline
-      </button>
-      <input type="range" id="time-slider" class="time-slider" min="2000" max="2024" step="1" value="2024" />
-      <span class="time-year-badge" id="current-year-display">2024</span>
-    </div>
-
-    <!-- Strategic Maritime Chokepoints -->
-    <div class="chokepoints-container">
-      <span class="chokepoints-label">Maritime Chokepoints:</span>
-      <div id="chokepoints-list" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
-    </div>
-  </aside>
-
-  <!-- ========================================================================
-       Bottom-Right Floating Controls: Zoom, Reset, Legend
-       ======================================================================== -->
-  <div class="map-controls">
-    <!-- Choropleth Legend (visible when heatmap metric active) -->
-    <div id="choropleth-legend-box" class="choropleth-legend" style="display: none;">
-      <div id="legend-metric-title" class="legend-title">Metric Legend</div>
-      <div class="legend-bar"></div>
-      <div class="legend-labels">
-        <span id="legend-min-lbl">Min</span>
-        <span>Median</span>
-        <span id="legend-max-lbl">Max</span>
-      </div>
-    </div>
-
-    <div class="control-btn-group">
-      <button id="zoom-in-btn" class="map-ctrl-btn" title="Zoom In">+</button>
-      <button id="zoom-out-btn" class="map-ctrl-btn" title="Zoom Out">−</button>
-      <button id="auto-rotate-btn" class="map-ctrl-btn" style="display: none;" title="Auto-Rotate Globe">🔄</button>
-      <button id="reset-view-btn" class="map-ctrl-btn" title="Reset View & Clear Selection">⟲</button>
+  <div id="loading" class="loading" aria-live="polite">
+    <div class="loading-inner">
+      <svg width="42" height="42" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14.5" fill="none" stroke="var(--border-strong)"/><path d="M5 19c6-8 16-8 22 0" stroke="var(--c-crude)" stroke-width="2.6" fill="none" stroke-linecap="round"/><path d="M7 13c5-4 13-4 18 0" stroke="var(--c-lng)" stroke-width="2.6" fill="none" stroke-linecap="round"/></svg>
+      <div class="loading-bar"><i></i></div>
+      <div id="loading-text">Loading world energy data…</div>
     </div>
   </div>
-
-  <!-- ========================================================================
-       Side Country Intelligence Drawer (Inflows, Outflows & Daily Stats)
-       ======================================================================== -->
-  <section class="drawer" id="country-drawer" aria-label="Country Energy Intelligence Profile">
-    <!-- Drawer Header -->
-    <div class="drawer-header">
-      <div id="drawer-header-content"></div>
-      <button id="drawer-close-btn" class="drawer-close-btn" title="Close drawer">✕</button>
-    </div>
-
-    <!-- Net Status Banner (Exporter / Importer) -->
-    <div id="drawer-net-banner" class="net-status-banner"></div>
-
-    <!-- Drawer Navigation Tabs -->
-    <div class="drawer-tabs">
-      <button class="drawer-tab active" data-tab="overview">📊 Daily Stats</button>
-      <button class="drawer-tab" data-tab="inflows">📥 Inflows (Imports)</button>
-      <button class="drawer-tab" data-tab="outflows">📤 Outflows (Exports)</button>
-      <button class="drawer-tab" data-tab="mix">⚡ Energy Mix</button>
-      <button class="drawer-tab" data-tab="trends">📈 Trends</button>
-    </div>
-
-    <!-- Drawer Body Content (Dynamic per active tab) -->
-    <div class="drawer-body" id="drawer-body-content"></div>
-  </section>
-
-  <!-- ========================================================================
-       Country Comparison Modal
-       ======================================================================== -->
-  <div class="modal-overlay" id="compare-modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div class="modal-title">⇄ Country Energy Comparison Tool</div>
-        <button id="modal-close-btn" class="drawer-close-btn">✕</button>
-      </div>
-      <div class="modal-body" id="compare-modal-body"></div>
-    </div>
-  </div>
-
-  <!-- Application Script Bundle -->
-  <script type="module" src="src/app.js"></script>
+  <noscript><p style="padding:2rem">TerraEnergy needs JavaScript to draw the map.</p></noscript>
 </body>
 </html>

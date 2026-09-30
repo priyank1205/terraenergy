@@ -6,5 +6,11 @@
 __pycache__/
 *.pyc
 
+# Raw source downloads (re-create with `npm run data:fetch`)
+pipeline/cache/
+
+# Node (no dependencies today, but keep it clean if any are added)
+node_modules/
+
 # Claude Code local settings
 .claude/settings.local.json
