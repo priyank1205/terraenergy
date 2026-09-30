@@ -163,6 +163,100 @@ class OverlandRules(unittest.TestCase):
         self.assertGreaterEqual(len(line), 3)
 
 
+class RollingRefresh(unittest.TestCase):
+    def setUp(self):
+        from pipeline import fetch_sources as F
+        self.F = F
+        self.saved = dict(F.COMTRADE_LIMITS)
+
+    def tearDown(self):
+        self.F.COMTRADE_LIMITS.update(self.saved)
+
+    def test_only_stale_or_undated_files_are_refetched_when_a_max_age_is_set(self):
+        import tempfile
+        from datetime import datetime, timedelta, timezone
+        F = self.F
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            ago = lambda days: (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            files = {"fresh": {"retrieved_at": ago(3)}, "stale": {"retrieved_at": ago(40)}, "undated": {"data": []}}
+            for name, payload in files.items():
+                (tmp / name).write_text(json.dumps(payload))
+            self.assertTrue(F.needs_fetch(tmp / "missing", refresh=False))
+            self.assertFalse(F.needs_fetch(tmp / "stale", refresh=False))
+            F.COMTRADE_LIMITS.update(max_age_days=None)
+            self.assertTrue(F.needs_fetch(tmp / "fresh", refresh=True))  # a plain --refresh refetches everything
+            F.COMTRADE_LIMITS.update(max_age_days=28)
+            self.assertEqual([F.needs_fetch(tmp / n, refresh=True) for n in files], [False, True, True])
+
+    def test_an_empty_response_never_replaces_earlier_rows(self):
+        import tempfile
+        F = self.F
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "imports_UGA_2025.json"
+            dest.write_text(json.dumps({"data": [{"row": 1}], "retrieved_at": "2026-08-01T00:00:00+00:00"}))
+            self.assertEqual(F.save_response(dest, {"data": [], "retrieved_at": "2026-09-30T00:00:00+00:00"}), [{"row": 1}])
+            self.assertEqual(json.loads(dest.read_text())["retrieved_at"], "2026-08-01T00:00:00+00:00")
+            self.assertEqual(F.save_response(dest, {"data": [{"row": 2}]}), [{"row": 2}])
+            new = Path(tmp) / "imports_XXX_2025.json"
+            self.assertEqual(F.save_response(new, {"data": []}), [])
+            self.assertTrue(new.exists())  # a genuinely empty first answer is still cached
+
+    def test_calls_stop_at_the_budget_or_the_api_quota(self):
+        import requests
+        from unittest import mock
+        F = self.F
+        F.COMTRADE_LIMITS.update(calls_left=2)
+        with mock.patch.object(F, "get_json", return_value={"data": []}) as get:
+            F.comtrade_get({})
+            F.comtrade_get({})
+            with self.assertRaises(F.QuotaReached):
+                F.comtrade_get({})
+            self.assertEqual(get.call_count, 2)
+        F.COMTRADE_LIMITS.update(calls_left=None)
+        for refusal in ("HTTP 429", "403 Client Error: Out of call volume quota"):
+            with mock.patch.object(F, "get_json", side_effect=requests.HTTPError(refusal)):
+                with self.assertRaises(F.QuotaReached):
+                    F.comtrade_get({})
+        with mock.patch.object(F, "get_json", side_effect=requests.HTTPError("HTTP 500")):
+            with self.assertRaises(requests.HTTPError):
+                F.comtrade_get({})
+
+
+class RefreshGuard(unittest.TestCase):
+    def files(self, crude_flows=100, crude_v=40000.0, lng_flows=50, metric_rows=90, pw_end="2026-09-27"):
+        flows = [{"c": "crude", "v": crude_v / crude_flows} for _ in range(crude_flows)]
+        flows += [{"c": "lng", "v": 10.0} for _ in range(lng_flows)]
+        return {
+            "flows.json": {"flows": flows},
+            "latest.json": {"oil_prod_kbd": {f"C{i:02d}": [1.0, 2025, "EI"] for i in range(metric_rows)}},
+            "countries.json": {"countries": [{}] * 200},
+            "chokepoints.json": {"chokepoints": [{}] * 10, "portwatch": {"chokepoint6": {"end": pw_end}}},
+        }
+
+    def test_normal_week_to_week_changes_pass(self):
+        from pipeline.check_data import problems, summarize
+        old = summarize(self.files())
+        new = summarize(self.files(crude_flows=97, crude_v=38500.0, metric_rows=89, pw_end="2026-10-04"))
+        self.assertEqual(problems(old, new), [])
+
+    def test_signs_of_a_broken_download_hold_the_build_back(self):
+        from pipeline.check_data import problems, summarize
+        old = summarize(self.files())
+        new = summarize(self.files(crude_flows=60, crude_v=30000.0, lng_flows=0, metric_rows=70, pw_end="2026-09-20"))
+        found = " | ".join(problems(old, new))
+        for expected in ("crude: 100 → 60 flows", "crude: volume", "lng: 50 → 0 flows", "metric oil_prod_kbd", "PortWatch chokepoint6"):
+            self.assertIn(expected, found)
+
+    def test_build_timestamps_are_not_data_changes(self):
+        from pipeline.check_data import load
+        a = load("trade_details.json", json.dumps({"generated_at": "2026-09-30T10:00:00Z", "records": [1]}))
+        b = load("trade_details.json", json.dumps({"generated_at": "2026-10-07T10:00:00Z", "records": [1]}))
+        self.assertEqual(a, b)
+        self.assertEqual(load("build_report.txt", "TerraEnergy data build — 2026-09-30\nsame"),
+                         load("build_report.txt", "TerraEnergy data build — 2026-10-07\nsame"))
+
+
 class CrudeOrigins(unittest.TestCase):
     def test_crude_declared_from_non_producers_is_left_off_the_map_and_reported(self):
         from pipeline.build import drop_non_producer_crude

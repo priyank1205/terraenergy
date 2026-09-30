@@ -23,6 +23,9 @@ latest complete year of official data (**2025**). It is paired with live shippin
 Everything is linkable (the URL encodes the view), searchable (<kbd>⌘K</kbd>), keyboard-driven, themeable
 (light/dark) and works on a phone.
 
+**Live site:** <https://priyank1205.github.io/terraenergy/>. The data refreshes itself weekly (see
+[Automatic refresh](#automatic-refresh-and-deployment)).
+
 ## Quick start
 
 ```bash
@@ -32,6 +35,7 @@ npm start                # serves on http://localhost:3000 (Python 3, no npm ins
 The app is plain ES modules plus a vendored copy of d3 and topojson-client. There is no build step and nothing to
 install for the saved map. Any static web server serves the map and saved trade records (use HTTP, not a `file://` URL).
 Live country-trade checks require `npm start` and Python `requests`; that server provides the `/api/trade` endpoint.
+The hosted site has no server, so its trade explorer shows the saved records from the latest data refresh.
 
 ## Where the numbers come from
 
@@ -126,13 +130,41 @@ python3 pipeline/sources/bilateral.py --pair CHN USA --refresh  # save latest an
 python3 pipeline/sources/bilateral.py --pair CHN USA --frequency M --refresh  # latest monthly reports
 ```
 
-Needs Python 3.10+ with `requests` and `openpyxl`. Raw downloads are cached in `pipeline/cache/` (≈80 MB, git-ignored).
-If a bulk download stops at the public API quota, existing successful downloads remain intact. `npm run data:build`
-publishes that mixed cache with its actual retrieval dates. A full refresh requires the source quota to be available.
+Needs Python 3.10+ with `requests` and `openpyxl`. Raw downloads are cached in `pipeline/cache/` (≈80 MB). Only the
+UN Comtrade responses (`pipeline/cache/comtrade/`, ≈14 MB) are committed: the public API's quota makes them slow to
+re-fetch. Everything else is re-downloaded when missing.
+
+When Comtrade's quota is reached, the fetch stops cleanly and keeps the files it didn't reach. Every file is written only
+after a successful call, and an empty answer never replaces one that had rows, so `npm run data:build` publishes that
+mixed cache with its actual retrieval dates.
+`--max-age DAYS` limits a refresh to Comtrade files retrieved more than DAYS ago, and `--budget CALLS` caps the calls:
+
+```bash
+python3 pipeline/fetch_sources.py --refresh --max-age 28 --budget 120   # what the weekly job runs
+python3 pipeline/check_data.py   # compare a rebuild with the last commit; fails on a suspicious drop
+```
 
 - **New Statistical Review:** update the EI snapshot URL and md5 in `pipeline/fetch_sources.py`.
 - **2026 situation layer:** edit the chokepoint statuses, timeline and market snapshot in
-  `pipeline/curated/context.py`, and bump `AS_OF`.
+  `pipeline/curated/context.py`, and bump `AS_OF`. This is editorial and is not refreshed automatically.
+
+## Automatic refresh and deployment
+
+Two GitHub Actions workflows keep the live site current:
+
+- **`refresh-data.yml`** runs every Wednesday at 05:30 UTC, after PortWatch's Tuesday update, and can be started by
+  hand from the Actions tab.
+  - It re-downloads EIA, OWID and PortWatch, and refreshes up to 120 UN Comtrade responses older than 28 days. The
+    whole Comtrade cache rotates in about a month.
+  - It rebuilds, runs the tests and runs `pipeline/check_data.py`.
+  - It commits changed data to `main` and redeploys.
+  - The check stops the run if flows, volumes, metric coverage or the PortWatch series shrink by more than it allows,
+    which is what a broken download looks like. GitHub emails the repository owner about the failed run, and the site
+    stays as it was.
+- **`deploy.yml`** publishes `index.html`, `src/`, `vendor/` and `public/data/` to GitHub Pages. It runs after
+  each refresh and on every push to `main`, but only once the tests pass.
+
+The scheduled job commits to `main`, so pull before starting local work on the data.
 
 ## Tests
 
@@ -159,8 +191,9 @@ src/
   styles/app.css         design tokens (light/dark) and components
 vendor/                  d3 7.9 and topojson-client 3.1 (UMD)
 pipeline/
-  fetch_sources.py       downloads + checksums
+  fetch_sources.py       downloads + checksums; quota-aware rolling Comtrade refresh
   build.py               joins sources, allocates, routes, validates, writes public/data/
+  check_data.py          guards an unattended refresh against broken downloads
   sources/               EI, EIA, OWID, Comtrade parsers
   lib/                   countries, sea-lane graph and router, TopoJSON helpers
   curated/context.py     chokepoints, timeline, market snapshot, infrastructure (all sourced)
@@ -168,6 +201,7 @@ pipeline/
 public/data/             generated data the app loads
 tests/                   JavaScript unit tests
 scripts/serve.py         local server with gzip and bounded UN Comtrade lookup endpoint
+.github/workflows/       weekly data refresh and GitHub Pages deployment
 ```
 
 ## License and attribution

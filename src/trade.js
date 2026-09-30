@@ -69,9 +69,20 @@ export async function loadSavedTrade(a, b, frequency) {
   return detailed;
 }
 
+// Live lookups need the local server (scripts/serve.py). A static host such as GitHub Pages has no /api/trade:
+// after the first miss the explorer shows saved records only and stops asking.
+let liveServer = true;
+export const liveTradeAvailable = () => liveServer;
+
 export async function loadLatestTrade(a, b, frequency, { refresh = false, signal } = {}) {
+  if (!liveServer) throw Object.assign(new Error("Live trade lookup needs the local server."), { code: "no-server" });
   const res = await fetch(`/api/trade?${new URLSearchParams({ a, b, frequency, refresh: refresh ? "1" : "0" })}`, { signal });
-  if (!res.ok || !res.headers.get("content-type")?.includes("application/json")) throw new Error("Live trade lookup is unavailable on this server.");
+  const json = res.headers.get("content-type")?.includes("application/json");
+  if (!json && (res.status === 404 || res.status === 405 || res.ok)) {
+    liveServer = false;
+    throw Object.assign(new Error("Live trade lookup needs the local server."), { code: "no-server" });
+  }
+  if (!res.ok && !json) throw new Error("Live trade lookup is unavailable on this server.");
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   if (!Array.isArray(data.snapshots)) throw new Error("Invalid trade response");

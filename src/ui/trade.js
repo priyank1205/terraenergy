@@ -1,6 +1,6 @@
 import { COMMODITY_META, countryName } from "../data.js";
 import { escapeHtml } from "../format.js";
-import { loadLatestTrade, loadSavedTrade, periodLabel, productRows, tradeCsv } from "../trade.js";
+import { liveTradeAvailable, loadLatestTrade, loadSavedTrade, periodLabel, productRows, tradeCsv } from "../trade.js";
 import { el, icon, section } from "./dom.js";
 
 const money = (v) => v == null ? "Not reported" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v);
@@ -15,9 +15,10 @@ export function openTradeExplorer(app, state) {
   let controller = null;
   const previousFocus = document.activeElement;
   const overlay = el("div", { class: "overlay", role: "dialog", "aria-modal": "true", "aria-label": "Trade between two countries" });
-  const status = el("p", { class: "trade-status", role: "status", "aria-live": "polite" }, "Loading saved reports and checking the latest publication…");
+  const status = el("p", { class: "trade-status", role: "status", "aria-live": "polite" },
+    liveTradeAvailable() ? "Loading saved reports and checking the latest publication…" : "Loading saved reports…");
   const results = el("div", { class: "trade-results" });
-  const refresh = el("button", { class: "btn small", onclick: () => load(true) }, "Check for updates");
+  const refresh = el("button", { class: `btn small${liveTradeAvailable() ? "" : " hidden"}`, onclick: () => load(true) }, "Check for updates");
   const download = el("button", { class: "btn small", disabled: true, onclick: () => {
     const url = URL.createObjectURL(new Blob([tradeCsv(data, category)], { type: "text/csv;charset=utf-8" }));
     const link = el("a", { href: url, download: `trade-${a}-${b}-${frequency}.csv` });
@@ -122,7 +123,7 @@ export function openTradeExplorer(app, state) {
     const version = ++generation;
     controller?.abort(); controller = new AbortController();
     refresh.disabled = true;
-    status.textContent = "Checking the latest published reports for both countries…";
+    if (liveTradeAvailable()) status.textContent = "Checking the latest published reports for both countries…";
     if (!data) {
       try { data = await loadSavedTrade(a, b, frequency); if (version !== generation || closed) return; render(); }
       catch { /* live query can still succeed */ }
@@ -144,7 +145,12 @@ export function openTradeExplorer(app, state) {
       render();
     } catch (error) {
       if (version !== generation || closed) return;
-      status.textContent = data ? "Live check unavailable. Showing saved declarations; their reporting dates are listed below."
+      if (error.code === "no-server") {
+        // Hosted copy of the site: saved records only, refreshed with each data update.
+        refresh.classList.add("hidden");
+        status.textContent = data ? "Showing saved customs records from the latest data update; each country's reporting period and retrieval date are below. Live checks for newer reports aren't available on this site."
+          : "No saved customs records for this pair of countries.";
+      } else status.textContent = data ? "Live check unavailable. Showing saved declarations; their reporting dates are listed below."
         : "No saved report and the live check is unavailable. Run the local app with npm start, then retry.";
       if (!data) results.replaceChildren(el("p", { class: "note" }, "No figures have been inferred or substituted."));
     } finally {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { periodLabel, productRows, savedPair, tradeCsv } from "../src/trade.js";
+import { periodLabel, productRows, savedPair, tradeCsv, liveTradeAvailable, loadLatestTrade } from "../src/trade.js";
 
 const record = (patch = {}) => ({ exporter: "CHN", importer: "USA", reporter: "USA", flow: "M", hs: "284690",
   category: "rare_earths", product: "Other rare earth compounds", frequency: "A", period: "2025", tonnes: 100,
@@ -46,4 +46,19 @@ test("CSV keeps missing weights empty, estimates flagged, and original source pr
   assert.equal(tradeCsv(data, "coal").split("\n").length, 1);
   assert.equal(periodLabel("202607"), "July 2026");
   assert.equal(periodLabel("2025"), "2025");
+});
+
+test("a static host without the local API switches the explorer to saved records", async () => {
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Response("<!doctype html>Not found", { status: 404, headers: { "content-type": "text/html" } }); };
+  try {
+    assert.equal(liveTradeAvailable(), true);
+    await assert.rejects(loadLatestTrade("CHN", "USA", "A"), (e) => e.code === "no-server");
+    assert.equal(liveTradeAvailable(), false);
+    await assert.rejects(loadLatestTrade("CHN", "IND", "A"), (e) => e.code === "no-server");
+    assert.equal(calls, 1, "later lookups don't ask again");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

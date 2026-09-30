@@ -4,6 +4,9 @@ Download every raw source the data build needs into pipeline/cache/.
 
     python3 pipeline/fetch_sources.py            # fetch anything missing
     python3 pipeline/fetch_sources.py --refresh  # re-fetch API sources (Comtrade, PortWatch)
+    python3 pipeline/fetch_sources.py --refresh --max-age 28 --budget 120
+        # rolling refresh (the scheduled job): only Comtrade files retrieved more than 28 days ago,
+        # at most 120 Comtrade calls, stopping quietly at the public API quota
 
 Sources
 -------
@@ -22,9 +25,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -137,6 +141,63 @@ def get_json(url: str, params: dict | None = None, retries: int = 6) -> dict:
     raise RuntimeError("unreachable")
 
 
+class QuotaReached(RuntimeError):
+    """This run's Comtrade call budget is spent, or the public API refused on quota grounds."""
+
+
+# Comtrade's public API has a call quota. A refresh can be limited to files older than `max_age_days` and to
+# `calls_left` calls; fresh files are skipped, so successive scheduled runs work through the rest of the cache.
+COMTRADE_LIMITS: dict = {"max_age_days": None, "calls_left": None}
+
+
+def comtrade_get(params: dict) -> dict:
+    """One Comtrade data call, counted against the run's budget. Raises QuotaReached instead of failing."""
+    if COMTRADE_LIMITS["calls_left"] is not None:
+        if COMTRADE_LIMITS["calls_left"] <= 0:
+            raise QuotaReached("this run's call budget is spent")
+        COMTRADE_LIMITS["calls_left"] -= 1
+    try:
+        return get_json(COMTRADE_URL, params)
+    except requests.HTTPError as exc:
+        # The API gateway answers 429 when throttling and 403 when the call-volume quota is used up.
+        if re.search(r"\b(403|429)\b", str(exc)):
+            raise QuotaReached(f"the public API refused further calls ({exc})") from exc
+        raise
+
+
+def needs_fetch(dest: Path, refresh: bool) -> bool:
+    """Whether a cached Comtrade response should be downloaded (again)."""
+    if not dest.exists():
+        return True
+    if not refresh:
+        return False
+    max_age = COMTRADE_LIMITS["max_age_days"]
+    if max_age is None:
+        return True
+    retrieved = json.loads(dest.read_text()).get("retrieved_at")
+    # Files saved before retrieval times were recorded count as oldest.
+    return not retrieved or datetime.fromisoformat(retrieved) < datetime.now(timezone.utc) - timedelta(days=max_age)
+
+
+def stamped(rows: list) -> dict:
+    """A payload assembled from per-commodity calls, with the retrieval metadata single calls carry."""
+    return {"data": rows, "split": True, "retrieved_at": datetime.now(timezone.utc).isoformat(), "source_url": COMTRADE_URL}
+
+
+def save_response(dest: Path, payload: dict) -> list:
+    """Cache a Comtrade response and return its rows. An empty response never replaces earlier rows: that is far
+    more often a transient gap in the API than withdrawn data, and it would silently drop the importer to its
+    fallback year. The file keeps its old retrieval time, so the next refresh tries again."""
+    rows = payload.get("data") or []
+    if not rows and dest.exists():
+        earlier = json.loads(dest.read_text()).get("data") or []
+        if earlier:
+            log(f"  kept earlier {dest.name}: the new response was empty")
+            return earlier
+    dest.write_text(json.dumps(payload))
+    return rows
+
+
 def comtrade_reporter_codes() -> dict[str, int]:
     ref_path = CACHE / "comtrade" / "reporters.json"
     if not ref_path.exists():
@@ -167,7 +228,7 @@ def fetch_comtrade(refresh: bool) -> None:
             continue
         for year in COMTRADE_YEARS:
             dest = out_dir / f"imports_{iso}_{year}.json"
-            if dest.exists() and not refresh:
+            if not needs_fetch(dest, refresh):
                 rows = json.loads(dest.read_text()).get("data") or []
                 if rows:
                     break
@@ -176,19 +237,19 @@ def fetch_comtrade(refresh: bool) -> None:
                 reporterCode=codes[iso], period=year, cmdCode=COMTRADE_CODES, flowCode="M",
                 customsCode="C00", motCode=0, partner2Code=0,
             )
-            payload = get_json(COMTRADE_URL, params)
+            payload = comtrade_get(params)
             rows = payload.get("data") or []
             if len(rows) >= 500:  # preview cap hit: split the request per commodity
                 rows = []
                 for code in COMTRADE_CODES.split(","):
-                    part = get_json(COMTRADE_URL, {**params, "cmdCode": code})
+                    part = comtrade_get({**params, "cmdCode": code})
                     subset = part.get("data") or []
                     if len(subset) >= 500:
                         raise RuntimeError(f"Truncated Comtrade imports: {iso} {year} {code}")
                     rows.extend(subset)
                     time.sleep(1.2)
-                payload = {"data": rows, "split": True, "retrieved_at": datetime.now(timezone.utc).isoformat(), "source_url": COMTRADE_URL}
-            dest.write_text(json.dumps(payload))
+                payload = stamped(rows)
+            rows = save_response(dest, payload)
             log(f"  {iso} {year}: {len(rows)} rows")
             time.sleep(1.2)
             if rows:
@@ -215,7 +276,7 @@ def fetch_comtrade_mirror(refresh: bool) -> None:
             continue
         for year in COMTRADE_YEARS:
             dest = out_dir / f"mirror_{iso}_{year}.json"
-            if dest.exists() and not refresh:
+            if not needs_fetch(dest, refresh):
                 if json.loads(dest.read_text()).get("data"):
                     break
                 continue
@@ -223,19 +284,19 @@ def fetch_comtrade_mirror(refresh: bool) -> None:
                 period=year, partnerCode=partner, cmdCode=COMTRADE_CODES, flowCode="X",
                 customsCode="C00", motCode=0, partner2Code=0,
             )
-            payload = get_json(COMTRADE_URL, params)
+            payload = comtrade_get(params)
             rows = payload.get("data") or []
             if len(rows) >= 500:
                 rows = []
                 for code in COMTRADE_CODES.split(","):
-                    part = get_json(COMTRADE_URL, {**params, "cmdCode": code})
+                    part = comtrade_get({**params, "cmdCode": code})
                     subset = part.get("data") or []
                     if len(subset) >= 500:
                         raise RuntimeError(f"Truncated Comtrade mirror data: {iso} {year} {code}")
                     rows.extend(subset)
                     time.sleep(1.2)
-                payload = {"data": rows, "split": True, "retrieved_at": datetime.now(timezone.utc).isoformat(), "source_url": COMTRADE_URL}
-            dest.write_text(json.dumps(payload))
+                payload = stamped(rows)
+            rows = save_response(dest, payload)
             log(f"  {iso} {year}: {len(rows)} rows")
             time.sleep(1.2)
             if rows:
@@ -260,15 +321,14 @@ def fetch_comtrade_lng(refresh: bool) -> None:
             continue
         for year in COMTRADE_YEARS:
             dest = out_dir / f"lng_{iso}_{year}.json"
-            if dest.exists() and not refresh:
+            if not needs_fetch(dest, refresh):
                 if json.loads(dest.read_text()).get("data"):
                     break
                 continue
             params = dict(reporterCode=codes[iso], period=year, cmdCode="271111", flowCode="M",
                           customsCode="C00", motCode=0, partner2Code=0)
-            payload = get_json(COMTRADE_URL, params)
-            rows = payload.get("data") or []
-            dest.write_text(json.dumps(payload))
+            payload = comtrade_get(params)
+            rows = save_response(dest, payload)
             log(f"  {iso} {year}: {len(rows)} rows")
             time.sleep(1.2)
             if rows:
@@ -310,21 +370,31 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--refresh", action="store_true", help="re-download API sources")
     ap.add_argument("--only", choices=["static", "comtrade", "mirror", "lng", "rare-earths", "portwatch"], help="fetch a single source")
+    ap.add_argument("--max-age", type=float, metavar="DAYS",
+                    help="with --refresh: re-fetch only Comtrade files retrieved more than DAYS ago")
+    ap.add_argument("--budget", type=int, metavar="CALLS", help="at most CALLS Comtrade data calls in this run")
     args = ap.parse_args()
+    COMTRADE_LIMITS.update(max_age_days=args.max_age, calls_left=args.budget)
     CACHE.mkdir(parents=True, exist_ok=True)
     if args.only in (None, "static"):
         fetch_static(args.refresh)
     if args.only in (None, "portwatch"):
         fetch_portwatch(args.refresh)
-    if args.only in (None, "comtrade"):
-        fetch_comtrade(args.refresh)
-    if args.only in (None, "mirror"):
-        fetch_comtrade_mirror(args.refresh)
-    if args.only in (None, "lng"):
-        fetch_comtrade_lng(args.refresh)
-    if args.only in (None, "rare-earths"):
-        from pipeline.sources.rare_earths import fetch
-        fetch(args.refresh)
+    try:
+        if args.only in (None, "comtrade"):
+            fetch_comtrade(args.refresh)
+        if args.only in (None, "mirror"):
+            fetch_comtrade_mirror(args.refresh)
+        if args.only in (None, "lng"):
+            fetch_comtrade_lng(args.refresh)
+        if args.only in (None, "rare-earths"):
+            from pipeline.sources.rare_earths import fetch
+            fetch(args.refresh)
+    except QuotaReached as exc:
+        # Every file is written only after a successful call, so the cache stays complete, just partly older.
+        log(f"Stopped Comtrade updates: {exc}. Files not reached keep their earlier retrieval.")
+    if args.budget is not None:
+        log(f"Comtrade calls used: {args.budget - COMTRADE_LIMITS['calls_left']} of {args.budget}")
     log("Done.")
     return 0
 

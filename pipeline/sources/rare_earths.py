@@ -34,7 +34,8 @@ SCOPE = (
 
 
 def fetch(refresh=False):
-    from pipeline.fetch_sources import CACHE, COMTRADE_URL, COMTRADE_YEARS, comtrade_reporter_codes, get_json, log
+    from pipeline.fetch_sources import (CACHE, COMTRADE_YEARS, comtrade_get, comtrade_reporter_codes, log, needs_fetch,
+                                        save_response, stamped)
     import time
 
     cache = CACHE / "comtrade"
@@ -46,25 +47,25 @@ def fetch(refresh=False):
                 continue
             for year in COMTRADE_YEARS:
                 dest = cache / f"rare_{direction}_{iso}_{year}.json"
-                if dest.exists() and not refresh:
+                if not needs_fetch(dest, refresh):
                     if json.loads(dest.read_text()).get("data"):
                         break
                     continue
                 params = dict(reporterCode=codes[iso], period=year, cmdCode=",".join(HS_CODES),
                               flowCode=direction, customsCode="C00", motCode=0, partner2Code=0)
-                payload = get_json(COMTRADE_URL, params)
+                payload = comtrade_get(params)
                 rows = payload.get("data") or []
                 if len(rows) >= 500:
                     rows = []
                     for code in HS_CODES:
-                        part = get_json(COMTRADE_URL, {**params, "cmdCode": code})
+                        part = comtrade_get({**params, "cmdCode": code})
                         subset = part.get("data") or []
                         if len(subset) >= 500:
                             raise RuntimeError(f"Truncated rare earth data: {iso} {year} {code}")
                         rows.extend(subset)
                         time.sleep(1.2)
-                    payload = {"data": rows, "split": True}
-                dest.write_text(json.dumps(payload))
+                    payload = stamped(rows)
+                rows = save_response(dest, payload)
                 log(f"  rare earths {direction} {iso} {year}: {len(rows)} rows")
                 time.sleep(1.2)
                 if rows:

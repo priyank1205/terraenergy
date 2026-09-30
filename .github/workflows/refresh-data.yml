@@ -1,0 +1,77 @@
+# Weekly data refresh: re-download the open sources, update a batch of UN Comtrade responses within the public
+# API's quota, rebuild public/data/, check it, commit it to main and redeploy the site.
+#
+# - PortWatch publishes on Tuesdays, so this runs early Wednesday (UTC).
+# - EIA, OWID and PortWatch are downloaded in full each time; the EI workbook is pinned by checksum.
+# - Comtrade: only responses retrieved more than 28 days ago are re-fetched, at most `budget` calls per run.
+#   The rest of the cache is committed, so each week continues where the last one stopped.
+# - pipeline/check_data.py holds back a build that looks like a broken download; the failed run is emailed to the
+#   repository owner and the live site stays as it was.
+name: Refresh data
+
+on:
+  schedule:
+    - cron: "30 5 * * 3"
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: Most UN Comtrade calls to make
+        default: "120"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install requests openpyxl
+
+      - name: Download sources
+        run: python3 pipeline/fetch_sources.py --refresh --max-age 28 --budget "${{ inputs.budget || '120' }}"
+
+      - name: Build
+        run: python3 pipeline/build.py
+
+      - name: Test
+        run: npm test
+
+      - name: Check the new build against the published one
+        run: python3 pipeline/check_data.py --restore-unchanged
+
+      - name: Commit
+        id: commit
+        run: |
+          git add public/data pipeline/cache/comtrade
+          if git diff --cached --quiet; then
+            echo "Nothing new to publish."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Data refresh $(date -u +%Y-%m-%d)" -m "$(git diff --cached --stat | tail -1)"
+          git pull --rebase
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml

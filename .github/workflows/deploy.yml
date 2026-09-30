@@ -1,0 +1,57 @@
+# Publish the static site to GitHub Pages. Runs on pushes to main, on demand, and after each data refresh
+# (refresh-data.yml calls it, because pushes made by a workflow don't trigger other workflows).
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # The branch tip, not the triggering commit: after a refresh that is the new data commit.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install requests openpyxl
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+      - name: Assemble the site (the app shell, its code and the built data; no pipeline or raw sources)
+        run: |
+          mkdir -p _site/public
+          cp -R index.html src vendor _site/
+          cp -R public/data _site/public/
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v5

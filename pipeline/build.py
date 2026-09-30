@@ -128,7 +128,8 @@ def build_geometry() -> tuple[dict, dict, dict]:
     lp = {iso: [v[0], v[1]] for iso, v in label_points.items()}
     for iso, (x, y) in overrides.items():
         lp[iso] = [x, y]
-    return lp, {k: sorted(v) for k, v in neighbours.items()}, dict(borders)
+    # Sorted keys keep countries.json byte-identical between builds of the same data.
+    return lp, {k: sorted(neighbours[k]) for k in sorted(neighbours)}, dict(borders)
 
 
 # ==========================================================================================
