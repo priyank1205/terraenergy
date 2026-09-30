@@ -5,7 +5,7 @@ import { metricScale, palette, refreshPalette } from "./colors.js";
 import { COMMODITY_META, countryName, flowValue, flowYears, loadCore, matchesCommodity, loadHistory, loadWorld50, refreshPortwatch, topFlows, valueAt } from "./data.js";
 import { fmt } from "./format.js";
 import { MapView } from "./map.js";
-import { createStore, parseHash } from "./store.js";
+import { createStore, parseHash, stateFromHash } from "./store.js";
 import { openAbout, openPalette, renderBanner, renderLegend, renderRail, toast, tooltipHtml } from "./ui/controls.js";
 import { icon } from "./ui/dom.js";
 import { Panel } from "./ui/panel.js";
@@ -20,6 +20,7 @@ class App {
     this.playing = false;
     this.highlightIds = null;
     this.historyPromise = null;
+    this.railOpen = true; // desktop map controls; on phones the rail is an overlay opened from the layers button
   }
 
   get state() {
@@ -63,10 +64,18 @@ class App {
       if (this.state.selected?.type === "chokepoint" || !this.state.selected) this.panel.render();
     });
     if (this.state.lens === "balances" && this.state.year !== 2025) this.ensureHistory().then(() => this.updateMap());
-    window.addEventListener("hashchange", () => {
-      const next = parseHash(location.hash);
-      if (Object.keys(next).length) this.store.set({ ...next, partner: next.partner || null, trade: next.trade || null });
-    });
+    // Opened links and Back/Forward: the URL describes the whole view, so nothing from the previous view lingers.
+    const fromUrl = () => {
+      const before = this.state;
+      this.highlightIds = null;
+      this.store.set(stateFromHash(location.hash), { history: "replace" });
+      const s = this.state;
+      if (s.lens === "balances" && s.year !== 2025) this.ensureHistory().then(() => this.updateMap());
+      if (s.partner && s.partner !== before.partner) this.focusPartner();
+      else if (s.selected && JSON.stringify(s.selected) !== JSON.stringify(before.selected)) this.focusSelection(s.selected);
+    };
+    window.addEventListener("hashchange", fromUrl);
+    window.addEventListener("popstate", fromUrl);
   }
 
   // -------------------------------------------------------------- state → views
@@ -112,13 +121,21 @@ class App {
       panel.classList.remove("peek");
       panel.classList.toggle("collapsed", !open);
     }
+    const railOpen = !mobile && this.railOpen;
     document.body.classList.toggle("panel-closed", !open);
+    document.body.classList.toggle("rail-closed", !this.railOpen);
     $("#btn-panel").classList.toggle("hidden", open || mobile);
-    $("#btn-layers").classList.toggle("hidden", !mobile);
+    $("#btn-layers").classList.toggle("hidden", !mobile && this.railOpen);
     if (!mobile) $("#rail").classList.remove("open");
+    // Fit the map to the area the floating rail, panel and banner leave uncovered.
     const panelW = open && !mobile ? panel.getBoundingClientRect().width + 24 : 0;
-    const top = mobile ? 64 : 76 + ($("#banner").classList.contains("hidden") ? 0 : 30);
-    const insets = { left: 0, right: panelW, top, bottom };
+    // Keep the map clear of the rail unless that leaves too narrow a map; then it runs underneath the rail,
+    // whose hide button gives the full width.
+    const railRight = railOpen ? $("#rail").getBoundingClientRect().right + 12 : 0;
+    const railW = window.innerWidth - panelW - railRight >= 560 ? railRight : 0;
+    const banner = $("#banner");
+    const top = Math.max(mobile ? 64 : 76, banner.classList.contains("hidden") ? 0 : banner.getBoundingClientRect().bottom + 6);
+    const insets = { left: railW, right: panelW, top, bottom };
     const key = JSON.stringify(insets);
     if (key !== this._insetsKey) {
       this._insetsKey = key;
@@ -226,7 +243,7 @@ class App {
     };
     const top = nice(m.vmax);
     return [top / 10, top / 2, top].map((v) => ({
-      px: Math.max(1, (0.7 + (m.maxWidth - 0.7) * Math.sqrt(v / m.vmax))),
+      px: Math.max(1, m.flowWidth(v)),
       label: unit === "EJ" ? `${v} EJ` : fmt(v, unit).replace(" bcm", "").replace(" Mt", ""),
     }));
   }
@@ -349,6 +366,28 @@ class App {
     return this.historyPromise;
   }
 
+  /** Show or hide the map controls. Hiding them on a desktop gives the map the full width. */
+  setRailOpen(open) {
+    if (this.isMobile()) {
+      $("#rail").classList.toggle("open", open);
+      $("#btn-layers").setAttribute("aria-pressed", String(open));
+      return;
+    }
+    this.railOpen = open;
+    this.syncPanelVisibility();
+    if (open) $("#rail").querySelector("button")?.focus();
+    else $("#btn-layers").focus();
+  }
+
+  async copyLink() {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      toast("Link copied");
+    } catch (e) {
+      toast("Copy the address bar to share this view");
+    }
+  }
+
   toggleProjection() {
     this.store.set({ projection: this.state.projection === "globe" ? "flat" : "globe" });
   }
@@ -460,22 +499,12 @@ class App {
     $("#btn-theme").innerHTML = icon(document.documentElement.dataset.theme === "light" ? "moon" : "sun");
     $("#btn-about").addEventListener("click", () => this.openAbout());
     $("#btn-about-2").addEventListener("click", () => this.openAbout());
-    $("#btn-share").addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(location.href);
-        toast("Link copied");
-      } catch (e) {
-        toast("Copy the address bar to share this view");
-      }
-    });
+    $("#btn-share").addEventListener("click", () => this.copyLink());
     $("#btn-zoom-in").addEventListener("click", () => this.map.zoomBy(1.6));
     $("#btn-zoom-out").addEventListener("click", () => this.map.zoomBy(1 / 1.6));
     $("#btn-reset").addEventListener("click", () => this.map.reset());
     $("#btn-panel").addEventListener("click", () => this.store.set({ panelOpen: true }));
-    $("#btn-layers").addEventListener("click", () => {
-      const open = $("#rail").classList.toggle("open");
-      $("#btn-layers").setAttribute("aria-pressed", String(open));
-    });
+    $("#btn-layers").addEventListener("click", () => this.setRailOpen(this.isMobile() ? !$("#rail").classList.contains("open") : true));
     const toggleSheet = () => {
       if (!this.isMobile() || this.state.selected) return;
       this.sheetExpanded = !this.sheetExpanded;

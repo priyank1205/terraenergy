@@ -242,6 +242,22 @@ export function exposureByImporter(db, cpId) {
   return [...agg.entries()].map(([iso, v]) => ({ iso, v })).sort((a, b) => b.v - a.v);
 }
 
+/**
+ * How much of EIA's pre-crisis estimate for a chokepoint the routed customs flows account for.
+ * Returns { period, oil: { routed, eia, pct }, lng: {...} | null } (mb/d and Bcf/d), or null without an EIA figure.
+ */
+export function chokepointCoverage(cp) {
+  const period = cp?.oil?.["2025h1"] != null ? "2025h1" : cp?.oil?.["2025"] != null ? "2025" : null;
+  if (!period) return null;
+  const routed = cp.routed || {};
+  const side = (routedV, eia) => (eia > 0.5 ? { routed: routedV, eia, pct: (100 * routedV) / eia } : null);
+  return {
+    period,
+    oil: side(((routed.crude || 0) + (routed.products || 0)) / 1000, cp.oil[period]),
+    lng: side(((routed.lng || 0) * 35.3147) / 365, cp.lng?.[period]),
+  };
+}
+
 /** Simple fuzzy search over countries, chokepoints and metrics. */
 export function search(db, query, metrics) {
   const q = query.trim().toLowerCase();

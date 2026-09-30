@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bilateral, buildDb, flowValue, flowYears, mergeParts, mergePortwatch, partners, ranking, refreshPortwatch, search, topFlows, tradeTotals, valueAt } from "../src/data.js";
+import { bilateral, buildDb, chokepointCoverage, flowValue, flowYears, mergeParts, mergePortwatch, partners, ranking, refreshPortwatch, search, topFlows, tradeTotals, valueAt } from "../src/data.js";
 
 function fixture() {
   const countries = ["SAU", "CHN", "JPN", "ARE", "USA"].map((iso) => ({
@@ -128,4 +128,15 @@ test("refreshPortwatch never throws when offline", async () => {
   const db = { portwatch: { chokepoint6: { start: "2026-09-18", end: "2026-09-20", tanker: [1], total: [1], tanker_dwt: [1] } } };
   const added = await refreshPortwatch(db, { fetchImpl: async () => { throw new Error("offline"); } });
   assert.equal(added, 0);
+});
+
+test("chokepoint coverage compares routed flows with EIA's estimate", () => {
+  const cov = chokepointCoverage({ oil: { "2024": 20.3, "2025h1": 20.9 }, lng: { "2025h1": 11.4 }, routed: { crude: 13580, products: 3364, lng: 113.6 } });
+  assert.equal(cov.period, "2025h1");
+  assert.ok(Math.abs(cov.oil.routed - 16.944) < 1e-9);
+  assert.ok(Math.abs(cov.oil.pct - 81.07) < 0.01);
+  assert.ok(Math.abs(cov.lng.eia - 11.4) < 1e-9);
+  assert.ok(Math.abs(cov.lng.pct - 96.4) < 0.1);
+  assert.equal(chokepointCoverage({ oil: { "2025": 2.3 }, lng: { "2025": 0 }, routed: { products: 465 } }).lng, null);
+  assert.equal(chokepointCoverage({ routed: { crude: 5 } }), null);
 });

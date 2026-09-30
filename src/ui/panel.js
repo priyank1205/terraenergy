@@ -4,7 +4,8 @@
 import { barList, lineChart, mixBar } from "../charts.js";
 import { palette } from "../colors.js";
 import {
-  bilateral, COMMODITY_META, countryName, exposureByImporter, flag, flowYears, latestValue, matchesCommodity, mergeParts, partners, ranking, tradeTotals,
+  bilateral, chokepointCoverage, COMMODITY_META, countryName, exposureByImporter, flag, flowYears, latestValue, matchesCommodity, mergeParts, partners,
+  ranking, tradeTotals,
 } from "../data.js";
 import { bcmToBcfd, dateLabel, escapeHtml, fmt, int, num, oil, pct, signed, toEJ } from "../format.js";
 import { el, icon, section, tabs } from "./dom.js";
@@ -413,10 +414,23 @@ export class Panel {
           this.kpi("Exports", fmt(t.exp, meta.unit), "", `net ${signed(net, (v) => fmt(v, meta.unit))}`)),
         el("div", { class: "label" }, "Sources (imports from)"), list("imp"),
         el("div", { class: "label", style: "margin-top:12px" }, "Destinations (exports to)"), list("exp"),
-        this.sourceNote(`${flowYears([...(db.byCountry.get(iso)?.imp || []), ...(db.byCountry.get(iso)?.exp || [])].filter((f) => f.c === active))} · ${active === "rare_earths" ? "UN Comtrade · product weight; incomplete coverage, not contained rare earth oxide." : "Recorded bilateral trade."}`));
+        this.sourceNote(`${flowYears([...(db.byCountry.get(iso)?.imp || []), ...(db.byCountry.get(iso)?.exp || [])].filter((f) => f.c === active))} · ${active === "rare_earths" ? "UN Comtrade · product weight; incomplete coverage, not contained rare earth oxide." : "Recorded bilateral trade."}`),
+        ...[active === "crude" && this.unattributedCrudeNote(iso)].filter(Boolean));
     };
     draw();
     return section("Trade partners", "hover to trace · click for details", wrap);
+  }
+
+  /** Crude that customs records attribute to economies producing none: left off the map, disclosed here. */
+  unattributedCrudeNote(iso) {
+    const { db } = this.app;
+    const e = db.flowCoverage.crude?.non_producer_origin?.[iso];
+    if (!e || e.kbd < 0.5) return null;
+    const names = Object.keys(e.from).slice(0, 4).map((x) => escapeHtml(countryName(db, x)));
+    const more = Object.keys(e.from).length > names.length ? ", …" : "";
+    return this.sourceNote(`Imports exclude <b>${oil(e.kbd)}</b> declared as coming from economies that produce no crude
+      (${names.join(", ")}${more}). These are usually trading companies' home countries, ship registries or storage
+      hubs, so the oil's true origin is unknown.`);
   }
 
   countryMix(iso) {
@@ -682,6 +696,7 @@ export class Panel {
         el("div", { class: "kpis", style: "margin-bottom:10px" },
           this.kpi("Crude + products", oil(tot), "", `crude ${oil(routed.crude || 0)}`),
           this.kpi("LNG", fmt(routed.lng || 0, "bcm"), "", routed.coal ? `coal ${fmt(routed.coal, "Mt")}` : "")),
+        coverageNote(chokepointCoverage(cp)),
         el("div", { class: "label" }, "Most dependent importers (oil)"),
         barList(exposed.map((r) => ({ iso: r.iso, flag: flag(db, r.iso), name: countryName(db, r.iso), value: r.v, label: oil(r.v), color: P.commodity.crude })),
           { onClick: (r) => this.app.select({ type: "country", id: r.iso }) })));
@@ -738,6 +753,18 @@ function sourceLabel(db, f) {
   if (f.s.includes("partner")) return `UN Comtrade · ${countryName(db, f.f)}'s export declaration (${countryName(db, f.t)} does not report)`;
   if (f.s === "Comtrade") return `UN Comtrade · ${countryName(db, f.t)}'s ${f.y} import declaration`;
   return f.s;
+}
+
+/** How the routed customs flows compare with EIA's estimate for a chokepoint, or null without one. */
+function coverageNote(cov) {
+  if (!cov?.oil) return null;
+  const period = cov.period === "2025h1" ? "1H25" : "2025";
+  const part = (c, what, unit) => `<b>${pct(c.pct)}</b> of EIA's ${num(c.eia, 1)} ${unit} ${what} estimate`;
+  const parts = [part(cov.oil, "oil", "mb/d"), cov.lng ? part(cov.lng, "LNG", "Bcf/d") : null].filter(Boolean);
+  const short = cov.oil.pct < 95 || (cov.lng && cov.lng.pct < 95);
+  return el("p", { class: "note", style: "margin:0 0 10px", html: `The routed flows below account for ${parts.join(" and ")} (${period}).
+    ${short ? "The gap is trade that customs records miss, such as unreported or relabelled cargoes, or that the model routes another way." : ""}
+    ${cov.oil.pct > 105 || cov.lng?.pct > 105 ? "Above 100% means the model routes some cargo this way that EIA counts elsewhere." : ""}` });
 }
 
 const days = (d) => (Math.round(d) <= 1 ? "1 day" : `${num(d, 0)} days`);

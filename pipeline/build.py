@@ -452,6 +452,33 @@ def build_comtrade_flows(records, hist):
     return flows, records
 
 
+MIN_CRUDE_PRODUCER_KBD = 1.0
+
+
+def drop_non_producer_crude(flows, hist):
+    """Remove crude 'exports' declared from economies that produce no crude oil.
+
+    Customs partners are sometimes a trader's domicile (Switzerland), a ship registry (Liberia), a storage or
+    ship-to-ship hub (Togo, Panama, Singapore) or a misattribution (landlocked Central African Republic). The true
+    origin is unknown, so drawing a route from the declared partner would mislead. Returns the remaining flows and
+    {importer: {"kbd": total, "from": {exporter: kbd}}} for what was left out, so the app can disclose it.
+    """
+    def production(iso):
+        series = hist["oil_prod_kbd"].get(iso) or {}
+        return series[max(series)] if series else 0.0
+
+    kept, excluded = {}, {}
+    for key, f in flows.items():
+        exp, imp, commodity = key
+        if commodity == "crude" and "ei" not in f["src"] and production(exp) < MIN_CRUDE_PRODUCER_KBD:
+            e = excluded.setdefault(imp, {"kbd": 0.0, "from": {}})
+            e["kbd"] += f["v"]
+            e["from"][exp] = e["from"].get(exp, 0.0) + f["v"]
+            continue
+        kept[key] = f
+    return kept, excluded
+
+
 def _weights_for(pairs_weight, candidates_from, candidates_to):
     w = {}
     for x in candidates_from:
@@ -679,6 +706,16 @@ def main() -> int:
     records = CT.load(CACHE / "comtrade", COMTRADE_IMPORTERS, COMTRADE_MIRROR_IMPORTERS, COMTRADE_LNG_IMPORTERS)
     log(f"  Comtrade records: {len(records)}")
     ct_flows, records = build_comtrade_flows(records, hist)
+    kept, non_producer_crude = drop_non_producer_crude(ct_flows, hist)
+    left_off = set(ct_flows) - set(kept)
+    if non_producer_crude:
+        pairs = sorted(((exp, imp, v) for imp, e in non_producer_crude.items() for exp, v in e["from"].items()),
+                       key=lambda x: -x[2])
+        shown = [p for p in pairs if p[2] >= MIN_FLOW["crude"]]
+        log(f"  crude declared from non-producing economies, left off the map "
+            f"({sum(e['kbd'] for e in non_producer_crude.values()):,.1f} kb/d):")
+        log("    " + ", ".join(f"{exp}→{imp} {v:,.1f}" for exp, imp, v in shown)
+            + (f" and {len(pairs) - len(shown)} below {MIN_FLOW['crude']} kb/d" if len(pairs) > len(shown) else ""))
     gas = build_gas_flows(ei, records, eia)
 
     # Russia → Belarus crude (neither side reports to Comtrade): EI inter-area 2025, Russia → Other CIS.
@@ -736,6 +773,9 @@ def main() -> int:
         add_flow(exp, imp, commodity, f["v"], f["year"], src_label, f["est"], ann.get("note"), ann.get("route_from"))
     for (exp, imp, commodity), v in sorted(gas.items(), key=lambda kv: -kv[1]):
         add_flow(exp, imp, commodity, v, 2025, "EI")
+    # Crude from non-producers was routed like the rest so it still consumes its IDs; removing it afterwards
+    # leaves gaps rather than renumbering, which keeps shared flow links valid.
+    flows = [f for f in flows if (f["f"], f["t"], f["c"]) not in left_off]
     # Append to preserve every existing energy-flow ID / shared URL.
     def route_rare_earths(exp, imp):
         try:
@@ -872,7 +912,12 @@ def main() -> int:
     node_list = [[r4(x), r4(y)] for x, y in S.NODES.values()]
     write("flows.json", {"year": 2025, "units": UNIT, "nodes": node_list, "node_names": list(S.NODES),
                          "coverage": {"rare_earths": {"scope": REE.SCOPE, "min_tonnes": 1,
-                            "importers": REE.IMPORTERS, "mirror_exporters": REE.EXPORTERS}},
+                            "importers": REE.IMPORTERS, "mirror_exporters": REE.EXPORTERS},
+                            "crude": {"non_producer_origin": {
+                                imp: {"kbd": r4(e["kbd"]),
+                                      "from": {k: r4(v) for k, v in sorted(e["from"].items(), key=lambda kv: -kv[1])
+                                               if v >= 0.01}}
+                                for imp, e in sorted(non_producer_crude.items()) if e["kbd"] >= 0.05}}},
                          "flows": flows})
 
     # chokepoints.json (+ PortWatch)

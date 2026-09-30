@@ -104,6 +104,9 @@ Live country-trade checks require `npm start` and Python `requests`; that server
 - LPG (HS 2711) isn't in the oil-product flows, so US and Gulf product exports are understated.
 - China declares much Iranian crude as Malaysian. That flow is kept as reported, flagged, and routed from Kharg Island.
 - Taiwan's crude import sources are incomplete, because Saudi Arabia books large volumes to "Other Asia, nes".
+- Crude declared from economies that produce none (Switzerland, Panama, Togo, Liberia, …) is left off the map. The
+  declared partner is a trader's home country, a ship registry or a storage hub, so the true origin is unknown. This
+  is about 0.15 mb/d worldwide; the build report lists each pair and each importer's profile states the excluded volume.
 - Russian exports are seen only through importers' declarations.
 - Transport modes are modelled, because customs records do not state them (see `pipeline/lib/overland.py`).
   Neighbours trade overland only across borders that carry freight; closed or impassable borders such as

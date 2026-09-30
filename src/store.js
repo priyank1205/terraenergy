@@ -78,23 +78,47 @@ export function toHash(s) {
   return `#${q.toString()}`;
 }
 
+/**
+ * The complete linkable state a hash describes: anything the hash leaves out returns to its default, so opening a
+ * link (or going Back) never keeps a stale selection. Settings `toHash` omits for the current lens (e.g. the
+ * commodity while colouring countries) are left out, so the caller keeps its current values. Pure — tested.
+ */
+export function stateFromHash(hash) {
+  const parsed = parseHash(hash);
+  const lens = parsed.lens || DEFAULTS.lens;
+  const out = {
+    lens, selected: null, compare: null, partner: null, trade: null,
+    projection: DEFAULTS.projection, scenario: DEFAULTS.scenario,
+  };
+  if (lens === "flows") Object.assign(out, { commodity: DEFAULTS.commodity, topN: DEFAULTS.topN });
+  if (lens === "balances") Object.assign(out, { metric: DEFAULTS.metric, year: DEFAULTS.year });
+  return { ...out, ...parsed };
+}
+
+// Changes that get their own browser history entry, so Back undoes them. Others (sliders, toggles) update
+// the current entry in place.
+const HISTORY_KEYS = new Set(["lens", "selected", "partner", "compare", "trade"]);
+
 export function createStore(initial) {
   let state = { ...DEFAULTS, ...initial, layers: { ...DEFAULTS.layers, ...(initial?.layers || {}) } };
   const subs = new Set();
   let urlTimer = null;
+  let push = false;
 
   function syncUrl() {
     if (typeof location === "undefined" || typeof history === "undefined") return; // non-browser (tests)
     clearTimeout(urlTimer);
     urlTimer = setTimeout(() => {
       const h = toHash(state);
-      if (h !== location.hash) history.replaceState(null, "", h);
+      if (h !== location.hash) history[push ? "pushState" : "replaceState"](null, "", h);
+      push = false;
     }, 120);
   }
 
   return {
     get: () => state,
-    set(patch) {
+    /** `history: "replace"` updates the URL without a new Back entry (used when the URL itself changed). */
+    set(patch, { history: mode = "auto" } = {}) {
       if (patch.commodity && patch.commodity !== state.commodity && state.selected?.type === "flow" && !("selected" in patch)) {
         patch = { ...patch, selected: null };
       }
@@ -107,6 +131,7 @@ export function createStore(initial) {
       const changed = Object.keys(patch).filter((k) => JSON.stringify(state[k]) !== JSON.stringify(next[k]));
       if (!changed.length) return;
       state = next;
+      if (mode !== "replace" && changed.some((k) => HISTORY_KEYS.has(k))) push = true;
       subs.forEach((fn) => fn(state, new Set(changed)));
       syncUrl();
     },

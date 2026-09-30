@@ -6,6 +6,9 @@ import { palette, withAlpha } from "./colors.js";
 
 const TAU = Math.PI * 2;
 const MAX_ZOOM = 14;
+// Portrait screens start zoomed in on this point (lon, lat): the Gulf-to-Asia trade at the centre of the story.
+const PORTRAIT_FOCUS = [62, 20];
+const STATUS_RANK = { closed: 0, high_risk: 1, restricted: 2, open: 3 };
 
 export class MapView {
   constructor(el, { onHover, onClick, onResize } = {}) {
@@ -40,6 +43,9 @@ export class MapView {
     this.lastFrame = 0;
     this.time = 0;
     this.reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.fontFamily = getComputedStyle(document.body).fontFamily;
+    this.minK = 1;
+    this.sizeK = 1;
     this._resize = this._resize.bind(this);
     new ResizeObserver(this._resize).observe(el);
     this._resize();
@@ -150,14 +156,32 @@ export class MapView {
     const x1 = w - ins.right - 8;
     const y0 = ins.top + 6;
     const y1 = h - ins.bottom - 6;
+    this.minK = 1;
+    let visibleW;
     if (this.mode === "flat") {
       this.proj = d3.geoEqualEarth().rotate([-10, 0]).precision(0.3);
       this.proj.fitExtent([[x0, y0], [x1, y1]], { type: "Sphere" });
+      // On a portrait screen the whole world is a thin strip. Enlarge it around PORTRAIT_FOCUS instead;
+      // panning reaches the rest and pinching out (down to minK) shows the whole world.
+      const [[sx0, sy0], [sx1, sy1]] = d3.geoPath(this.proj).bounds({ type: "Sphere" });
+      const grow = Math.min(2.2, (0.62 * (y1 - y0)) / (sy1 - sy0));
+      if (y1 - y0 > 1.1 * (x1 - x0) && grow > 1.1) {
+        this.proj.scale(this.proj.scale() * grow);
+        const [fx] = this.proj(PORTRAIT_FOCUS);
+        const [tx, ty] = this.proj.translate();
+        this.proj.translate([tx + (x0 + x1) / 2 - fx, ty]);
+        this.minK = 1 / grow;
+      }
+      visibleW = Math.min(x1 - x0, (sx1 - sx0) / this.minK);
     } else {
       const r = Math.min(x1 - x0, y1 - y0) * 0.46 * this.globeK;
       this.proj = d3.geoOrthographic().rotate(this.rotate).translate([(x0 + x1) / 2, (y0 + y1) / 2]).scale(r).clipAngle(90).precision(0.4);
+      visibleW = Math.min(x1 - x0, (2 * r) / this.globeK);
     }
+    // Flow widths are in pixels: scale them with the map so a phone doesn't get the lines of a desktop.
+    this.sizeK = Math.max(0.5, Math.min(1, visibleW / 900));
     this.baseScale = this.proj.scale();
+    this.zoom?.scaleExtent([this.minK, MAX_ZOOM]);
   }
 
   /** Centre of the visible map area. */
@@ -187,7 +211,7 @@ export class MapView {
   _initZoom() {
     let last = d3.zoomIdentity;
     this.zoom = d3.zoom()
-      .scaleExtent([1, MAX_ZOOM])
+      .scaleExtent([this.minK, MAX_ZOOM])
       .clickDistance(4)
       .on("start", () => {
         this.interacting = true;
@@ -280,7 +304,7 @@ export class MapView {
     const ins = this.insets || { left: 0, right: 0, top: 0, bottom: 0 };
     const availW = this.w - ins.left - ins.right - 60;
     const availH = this.h - ins.top - ins.bottom - 40;
-    const k = Math.max(1, Math.min(6, 0.85 / Math.max((x1 - x0) / availW, (y1 - y0) / availH, 1e-3)));
+    const k = Math.max(this.minK, Math.min(6, 0.85 / Math.max((x1 - x0) / availW, (y1 - y0) / availH, 1e-3)));
     const [cx, cy] = this.viewCenter();
     const t = d3.zoomIdentity.translate(cx - ((x0 + x1) / 2) * k, cy - ((y0 + y1) / 2) * k).scale(k);
     d3.select(this.top).transition().duration(900).call(this.zoom.transform, t);
@@ -502,10 +526,15 @@ export class MapView {
     if (this.selectedIso) outline(this.selectedIso, P.text, 1.8);
   }
 
+  /** Stroke width in px for a flow value at the starting zoom (the legend uses it too). */
+  flowWidth(v) {
+    const max = this.maxWidth * this.sizeK;
+    return 0.7 + (max - 0.7) * Math.sqrt(Math.max(0, v) / this.vmax);
+  }
+
   _widthOf(f) {
-    const v = this.valueOf(f);
-    const zoomBoost = this.mode === "flat" ? Math.min(1.8, 1 + Math.log2(this.t.k) * 0.25) : Math.min(1.6, this.globeK ** 0.4);
-    return (0.7 + (this.maxWidth - 0.7) * Math.sqrt(Math.max(0, v) / this.vmax)) * zoomBoost;
+    const zoomBoost = this.mode === "flat" ? Math.max(0.6, Math.min(1.8, 1 + Math.log2(this.t.k) * 0.25)) : Math.min(1.6, this.globeK ** 0.4);
+    return this.flowWidth(this.valueOf(f)) * zoomBoost;
   }
 
   _drawTop(dt) {
@@ -557,8 +586,13 @@ export class MapView {
     }
 
     if (this.layers.terminals && this.terminals.length) this._drawTerminals(ctx, P);
-    this._drawChokepoints(ctx, P);
-    if (this.layers.labels) this._drawLabels(ctx, P);
+    // Labels share one list of occupied boxes so they never overprint each other or a chokepoint marker.
+    // The selected country's name is reserved first; chokepoint names come next, then other countries.
+    const placed = [];
+    const selLabel = this.layers.labels ? this._countryLabel(ctx, this.selectedIso, 650) : null;
+    if (selLabel) placed.push(selLabel.box);
+    this._drawChokepoints(ctx, P, placed);
+    if (this.layers.labels) this._drawLabels(ctx, P, placed, selLabel);
   }
 
   _strokeFlow(ctx, f, st, proj, P, hovered) {
@@ -641,9 +675,10 @@ export class MapView {
     return [q[0] * this.t.k + this.t.x, q[1] * this.t.k + this.t.y];
   }
 
-  _drawChokepoints(ctx, P) {
+  _drawChokepoints(ctx, P, placed) {
     const pulse = (this.time % 2000) / 2000;
     this._cpScreen = [];
+    const labels = [];
     for (const cp of this.chokepoints) {
       const q = this._projectPoint(cp.coords);
       if (!q) continue;
@@ -677,31 +712,49 @@ export class MapView {
         ctx.lineTo(q[0] - s, q[1] + s);
         ctx.stroke();
       }
+      placed.push([q[0] - r - 2, q[1] - r - 2, 2 * r + 4, 2 * r + 4]);
       if (this.cpLabels || selected || hovered) {
-        label(ctx, cp.name, q[0] + r + 5, q[1] + 4, P, selected || hovered ? 600 : 550);
+        labels.push({ text: cp.name, q, r, force: selected || hovered, rank: STATUS_RANK[cp.status] ?? 9, weight: selected || hovered ? 600 : 550 });
       }
+    }
+    // Selected or hovered first, then by severity. Try right, left, above, below; skip a name with no free spot.
+    labels.sort((a, b) => b.force - a.force || a.rank - b.rank);
+    for (const l of labels) {
+      ctx.font = this._font(l.weight);
+      const tw = ctx.measureText(l.text).width;
+      const [x, y] = l.q;
+      const d = l.r + 5;
+      const spots = [[x + d, y - 8], [x - d - tw, y - 8], [x - tw / 2, y - d - 16], [x - tw / 2, y + d]];
+      const boxes = spots.map(([bx, by]) => [bx - 2, by, tw + 4, 16]);
+      const box = boxes.find((b) => !placed.some((p) => overlap(p, b))) || (l.force ? boxes[0] : null);
+      if (!box) continue;
+      placed.push(box);
+      label(ctx, l.text, box[0] + 2, box[1] + 12, P, this._font(l.weight));
     }
   }
 
-  _drawLabels(ctx, P) {
-    const isos = new Set();
-    if (this.selectedIso) isos.add(this.selectedIso);
-    this.highlightIsos.forEach((i) => isos.add(i));
-    if (!isos.size || !this.labelPoints) return;
-    const placed = [];
-    const list = [...isos].slice(0, 40);
+  _font(weight) {
+    return `${weight} 11.5px ${this.fontFamily}`;
+  }
+
+  /** Where a country's name goes (centred on its label point), or null when off-screen. */
+  _countryLabel(ctx, iso, weight) {
+    const lp = iso && this.labelPoints?.get(iso);
+    const q = lp && this._projectPoint(lp.lp);
+    if (!q) return null;
+    ctx.font = this._font(weight);
+    const tw = ctx.measureText(lp.name).width;
+    return { iso, text: lp.name, x: q[0] - tw / 2, y: q[1] + 4, weight, box: [q[0] - tw / 2 - 4, q[1] - 9, tw + 8, 16] };
+  }
+
+  _drawLabels(ctx, P, placed, selLabel) {
+    if (selLabel) label(ctx, selLabel.text, selLabel.x, selLabel.y, P, this._font(selLabel.weight));
+    const list = [...this.highlightIsos].filter((iso) => iso !== this.selectedIso).slice(0, 40);
     for (const iso of list) {
-      const lp = this.labelPoints.get(iso);
-      if (!lp) continue;
-      const q = this._projectPoint(lp.lp);
-      if (!q) continue;
-      const text = lp.name;
-      ctx.font = `${iso === this.selectedIso ? 650 : 550} 11.5px ${getComputedStyle(document.body).fontFamily}`;
-      const tw = ctx.measureText(text).width;
-      const box = [q[0] - tw / 2 - 4, q[1] - 9, tw + 8, 16];
-      if (iso !== this.selectedIso && placed.some((b) => overlap(b, box))) continue;
-      placed.push(box);
-      label(ctx, text, q[0] - tw / 2, q[1] + 4, P, iso === this.selectedIso ? 650 : 550);
+      const l = this._countryLabel(ctx, iso, 550);
+      if (!l || placed.some((b) => overlap(b, l.box))) continue;
+      placed.push(l.box);
+      label(ctx, l.text, l.x, l.y, P, this._font(l.weight));
     }
   }
 
@@ -873,8 +926,8 @@ function distToRun(pts, x, y, tol) {
   return best;
 }
 
-function label(ctx, text, x, y, P, weight = 550) {
-  ctx.font = `${weight} 11.5px ${getComputedStyle(document.body).fontFamily}`;
+function label(ctx, text, x, y, P, font) {
+  ctx.font = font;
   ctx.lineJoin = "round";
   ctx.strokeStyle = withAlpha(P.bg, 0.85);
   ctx.lineWidth = 3.5;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStore, DEFAULTS, parseHash, toHash } from "../src/store.js";
+import { createStore, DEFAULTS, parseHash, stateFromHash, toHash } from "../src/store.js";
 
 test("parseHash reads valid parameters", () => {
   const s = parseHash("#lens=flows&c=lng&n=80&sel=country:JPN&p=globe");
@@ -72,4 +72,45 @@ test("store notifies only on real changes and merges layers", () => {
   assert.deepEqual(seen, [["commodity"], ["layers"]]);
   assert.equal(store.get().layers.particles, true);
   assert.equal(store.get().layers.pipelines, true);
+});
+
+test("stateFromHash resets whatever a link leaves out, so no stale selection survives", () => {
+  const s = stateFromHash("#lens=balances&m=co2_pc_t");
+  assert.equal(s.lens, "balances");
+  assert.equal(s.metric, "co2_pc_t");
+  assert.equal(s.year, DEFAULTS.year);
+  for (const k of ["selected", "compare", "partner", "trade"]) assert.equal(s[k], null, k);
+  assert.equal(s.projection, "flat");
+  assert.equal(s.scenario, "hormuz");
+  assert.equal("commodity" in s, false, "the flows commodity isn't in a balances link, so the current one is kept");
+  assert.deepEqual(stateFromHash("").selected, null);
+  assert.equal(stateFromHash("").commodity, DEFAULTS.commodity);
+  assert.equal(stateFromHash("#lens=flows&c=lng").topN, DEFAULTS.topN);
+  assert.deepEqual(stateFromHash("#lens=chokepoints&sel=chokepoint:hormuz").selected, { type: "chokepoint", id: "hormuz" });
+});
+
+test("navigation adds a Back entry; sliders and URL-driven updates replace the current one", async () => {
+  const calls = [];
+  const loc = { hash: "" };
+  globalThis.location = loc;
+  globalThis.history = {
+    pushState: (_s, _t, h) => { calls.push(["push", h]); loc.hash = h; },
+    replaceState: (_s, _t, h) => { calls.push(["replace", h]); loc.hash = h; },
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 160));
+  try {
+    const store = createStore({});
+    store.set({ topN: 80 });
+    await settle();
+    store.set({ selected: { type: "country", id: "IND" } });
+    store.set({ commodity: "lng" }); // batched with the selection: still one entry
+    await settle();
+    store.set({ selected: null }, { history: "replace" });
+    await settle();
+    assert.deepEqual(calls.map((c) => c[0]), ["replace", "push", "replace"]);
+    assert.match(calls[1][1], /sel=country%3AIND/);
+  } finally {
+    delete globalThis.location;
+    delete globalThis.history;
+  }
 });

@@ -1,4 +1,4 @@
-TerraEnergy data build — 2026-09-27
+TerraEnergy data build — 2026-09-30
 Loading sources
   EI 2026: 79 countries; EIA updated 2026-09-03T20:46:44-04:00
 Geometry
@@ -10,27 +10,29 @@ Trade
     dropped implausible mirror row SAU→TWN crude 5,138.5 (bound 1,302.7)
     dropped implausible mirror row IND→NPL coal 1.6 (bound 1.6)
     dropped implausible mirror row THA→LAO products 38.4 (bound 30.1)
-  flows: 3055 {'crude': 659, 'products': 1282, 'coal': 369, 'pipeline_gas': 60, 'lng': 348, 'rare_earths': 337}
+  crude declared from non-producing economies, left off the map (145.3 kb/d):
+    TGO→CHN 50.4, BEL→NLD 17.9, NIC→SEN 10.6, PAN→IND 5.8, LBR→FRA 5.6, URY→IND 5.5, URY→ESP 5.5, TGO→IND 5.4, CAF→IND 4.3, MAR→GHA 4.1, SGP→QAT 3.6, CHE→IND 3.5, SGP→USA 3.0, SGP→IND 2.8, BEL→ZAF 2.4, SWE→QAT 2.1, LBR→ITA 1.6, MOZ→CHN 1.2, MOZ→KOR 1.2 and 95 below 1.0 kb/d
+  flows: 3036 {'crude': 640, 'products': 1282, 'coal': 369, 'pipeline_gas': 60, 'lng': 348, 'rare_earths': 337}
 Validation: crude imports 2025, Comtrade-derived vs EI (kb/d)
-  CHN: flows   11,489   EI   11,671   ratio 0.98
-  IND: flows    5,231   EI    5,267   ratio 0.99
+  CHN: flows   11,437   EI   11,671   ratio 0.98
+  IND: flows    5,204   EI    5,267   ratio 0.99
   JPN: flows    2,338   EI    2,316   ratio 1.01
-  USA: flows    6,706   EI    6,169   ratio 1.09
+  USA: flows    6,703   EI    6,169   ratio 1.09
   SGP: flows      953   EI      944   ratio 1.01
   CAN: flows      479   EI      538   ratio 0.89
   LNG flows total 578.2 bcm (EI 578.5); pipeline 567.6 bcm (EI 567.6)
 Validation: routed 2025 flows through chokepoints vs EIA 1H25 (mb/d, Bcf/d)
   hormuz          oil  16.9 (EIA 20.9)   LNG 11.0 (EIA 11.4)   coal      1 Mt
-  malacca         oil  20.0 (EIA 23.2)   LNG 11.0 (EIA 9.2)   coal     63 Mt
+  malacca         oil  19.9 (EIA 23.2)   LNG 11.0 (EIA 9.2)   coal     63 Mt
   suez            oil   4.9 (EIA 4.9)   LNG  0.2 (EIA 0.9)   coal     46 Mt
   bab_el_mandeb   oil   4.3 (EIA 4.2)   LNG  0.0 (EIA 0.0)   coal     46 Mt
-  cape_good_hope  oil   7.2 (EIA 9.1)   LNG  5.5 (EIA 5.7)   coal     61 Mt
+  cape_good_hope  oil   7.1 (EIA 9.1)   LNG  5.5 (EIA 5.7)   coal     61 Mt
   bosporus        oil   2.5 (EIA 3.3)   LNG  0.0 (EIA 0.0)   coal     59 Mt
   danish_straits  oil   2.6 (EIA 4.9)   LNG  2.7 (EIA 1.6)   coal     24 Mt
   panama          oil   0.5 (EIA 2.3)   LNG  0.0 (EIA None)   coal     43 Mt
   gibraltar       oil   6.3 (EIA None)   LNG  6.3 (EIA None)   coal     58 Mt
   taiwan_strait   oil   6.5 (EIA None)   LNG  6.7 (EIA None)   coal     14 Mt
-  hormuz_oil_share: YEM 75%, JPN 68%, PAK 67%, KEN 59%, KOR 58%, UGA 51%, TZA 48%, MUS 46%, MWI 44%, CHN 42%, TWN 42%, ZMB 41%, IND 41%, GRC 38%
+  hormuz_oil_share: YEM 75%, JPN 68%, PAK 67%, KEN 59%, KOR 58%, UGA 51%, TZA 48%, MUS 46%, MWI 44%, CHN 42%, TWN 42%, IND 42%, ZMB 41%, GRC 38%
   hormuz_oil_cons_share: KOR 71%, PAK 68%, MUS 67%, GRC 63%, JPN 59%, SGP 55%, KEN 55%, UGA 53%, LTU 52%, ZMB 48%, TZA 47%, TWN 45%, IND 41%, ZAF 41%
   hormuz_lng_share: PAK 99%, HKG 83%, IND 59%, SGP 43%, TWN 35%, ITA 33%, CHN 30%, KWT 30%, THA 21%, BEL 17%, KOR 16%, PHL 10%, JOR 9%, SWE 9%
 Writing outputs
@@ -38,7 +40,7 @@ Writing outputs
   wrote countries.json             31.1 KB
   wrote latest.json               188.8 KB
   wrote history.json             1031.0 KB
-  wrote flows.json                820.0 KB
+  wrote flows.json                816.0 KB
   wrote chokepoints.json          219.7 KB
   wrote context.json               28.5 KB
   wrote meta.json                   5.1 KB

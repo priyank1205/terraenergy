@@ -163,6 +163,27 @@ class OverlandRules(unittest.TestCase):
         self.assertGreaterEqual(len(line), 3)
 
 
+class CrudeOrigins(unittest.TestCase):
+    def test_crude_declared_from_non_producers_is_left_off_the_map_and_reported(self):
+        from pipeline.build import drop_non_producer_crude
+        hist = {"oil_prod_kbd": {"IRQ": {2024: 4300.0, 2025: 4400.0}, "CHE": {2025: 0.0}, "NLD": {2025: 23.0}}}
+        flow = lambda v, src=("importer",): {"v": v, "usd": 0.0, "year": 2025, "src": set(src), "est": False}
+        flows = {
+            ("IRQ", "IND", "crude"): flow(980.0),
+            ("CHE", "IND", "crude"): flow(3.5),     # trader domicile: produces no crude
+            ("CAF", "IND", "crude"): flow(4.3),     # no production series at all
+            ("NLD", "BEL", "crude"): flow(661.0),   # small producer re-exporting by pipeline: kept
+            ("CHE", "IND", "products"): flow(2.0),  # products may come from anywhere
+            ("XXX", "BLR", "crude"): flow(290.0, ("ei",)),  # Energy Institute estimates are not customs partners
+        }
+        kept, excluded = drop_non_producer_crude(flows, hist)
+        self.assertEqual(set(kept), {("IRQ", "IND", "crude"), ("NLD", "BEL", "crude"), ("CHE", "IND", "products"),
+                                     ("XXX", "BLR", "crude")})
+        self.assertEqual(set(excluded), {"IND"})
+        self.assertAlmostEqual(excluded["IND"]["kbd"], 7.8)
+        self.assertEqual(excluded["IND"]["from"], {"CHE": 3.5, "CAF": 4.3})
+
+
 @unittest.skipUnless((OUT / "flows.json").exists(), "run pipeline/build.py first")
 class BuiltOutputs(unittest.TestCase):
     @classmethod
@@ -204,6 +225,12 @@ class BuiltOutputs(unittest.TestCase):
             self.assertTrue(set(f["years"]) <= {2024, 2025})
             self.assertIn("Comtrade", f["s"])
             self.assertIn(f["mode"], {"sea", "overland"})
+
+    def test_every_crude_exporter_produces_crude(self):
+        prod = self.latest["oil_prod_kbd"]
+        bad = sorted({f["f"] for f in self.flows["flows"] if f["c"] == "crude" and f["s"] != "EI"
+                      and (prod.get(f["f"]) or [0])[0] < 1})
+        self.assertFalse(bad, f"crude routed from economies without crude production: {bad}")
 
     def test_lng_never_moves_overland(self):
         self.assertFalse([f for f in self.flows["flows"] if f["c"] == "lng" and f["mode"] != "sea"])

@@ -2,7 +2,7 @@
 /* global d3 */
 
 import { palette } from "../colors.js";
-import { COMMODITY_META, countryName, flag, flowYears, latestValue, matchesCommodity, search, tradeTotals, valueAt } from "../data.js";
+import { chokepointCoverage, COMMODITY_META, countryName, flag, flowYears, latestValue, matchesCommodity, search, tradeTotals, valueAt } from "../data.js";
 import { COMMODITIES, ENERGY_COMMODITIES } from "../store.js";
 import { dateLabel, escapeHtml, fmt, num, pct, signed } from "../format.js";
 import { el, icon } from "./dom.js";
@@ -13,7 +13,8 @@ const GROUP_LABEL = { security: "Energy security", supply: "Supply", demand: "De
 // ------------------------------------------------------------------------------------ rail
 export function renderRail(root, app) {
   const { state, db } = app;
-  root.replaceChildren();
+  root.replaceChildren(el("button", { class: "icon-btn rail-hide", "aria-label": "Hide map controls", title: "Hide controls — wider map",
+    html: icon("collapse"), onclick: () => app.setRailOpen(false) }));
   const P = palette();
   if (state.lens === "flows") {
     const chips = el("div", { class: "chips" });
@@ -122,7 +123,11 @@ export function renderLegend(root, app, scaleInfo) {
     const meta = db.meta.metrics[state.metric];
     const { legend } = scaleInfo;
     root.append(el("div", { class: "legend-title", html: `<span>${escapeHtml(meta.label)}</span><span class="dim">${escapeHtml(meta.unit)}</span>` }));
-    root.append(el("div", { class: "legend-sub" }, state.metric.startsWith("hormuz_") ? "2025, routed customs data" : `${state.year < 2025 ? state.year : "Latest year"} · EI / EIA / Ember`));
+    const hz = state.metric.startsWith("hormuz_") ? chokepointCoverage(db.cpById.get("hormuz")) : null;
+    const hzCov = hz?.[state.metric === "hormuz_lng_share" ? "lng" : "oil"];
+    root.append(el("div", { class: "legend-sub" }, state.metric.startsWith("hormuz_")
+      ? `2025, routed customs data${hzCov ? ` · covers ${pct(hzCov.pct)} of EIA's Hormuz ${state.metric === "hormuz_lng_share" ? "LNG" : "oil"}` : ""}`
+      : `${state.year < 2025 ? state.year : "Latest year"} · EI / EIA / Ember`));
     if (legend.type === "ramp") {
       root.append(el("div", { class: "legend-ramp", style: `background:linear-gradient(90deg,${legend.stops.join(",")})` }));
       const ticks = legend.left
@@ -277,6 +282,7 @@ export function openPalette(app, { mode = "search" } = {}) {
     ...COMMODITIES.map((c) => ({ kind: "command", label: `Show ${COMMODITY_META[c].label} flows`, sub: "Commodity", icon: "◦", run: () => app.store.set({ lens: "flows", commodity: c }) })),
     { kind: "command", label: "Toggle globe / flat map", sub: "View · G", icon: "◍", run: () => app.toggleProjection() },
     { kind: "command", label: "Toggle light / dark theme", sub: "View · T", icon: "◐", run: () => app.toggleTheme() },
+    { kind: "command", label: "Copy link to this view", sub: "Share", icon: "⧉", run: () => app.copyLink() },
     { kind: "command", label: "Download map as PNG", sub: "Export", icon: "⤓", run: () => app.downloadPng() },
     { kind: "command", label: "Download visible flows as CSV", sub: "Export", icon: "⤓", run: () => app.downloadCsv() },
     { kind: "command", label: "Sources & methods", sub: "About", icon: "ⓘ", run: () => app.openAbout() },
@@ -382,6 +388,7 @@ export function openAbout(app) {
       <li>LPG and other petroleum gases (HS 2711) are not included in oil-product flows, so product trade from the US and the Gulf is understated.</li>
       <li>China declares a large volume of crude as Malaysian. Tanker-tracking firms attribute most of it to Iran, so that flow is routed from Kharg Island and flagged.</li>
       <li>Taiwan's crude import sources are incomplete: Saudi Arabia records exports to “Other Asia, nes” that cannot be allocated.</li>
+      <li>Crude declared as coming from economies that produce none (for example Switzerland, Panama, Togo or Liberia) is left off the map, because the declared partner is a trading company's home country, a ship registry or a storage hub and the true origin is unknown. About 0.15 mb/d worldwide; each importer's profile states how much was excluded.</li>
       <li>Russian exports are seen only through importers' declarations. Russia–Belarus crude uses EI's inter-regional estimate.</li>
       <li>Transport modes are modelled, because customs records do not state them. Neighbours trade overland only across borders that carry freight; closed or impassable borders (China–India, India–Pakistan, Armenia–Azerbaijan) and neighbours that trade mainly by tanker are routed by sea. Landlocked countries ship through their usual gateway port. Crude is shown as a pipeline only where a cross-border pipeline exists.</li>
       <li>Pipeline routes, border crossings and terminal assignments are schematic, for orientation only.</li>
