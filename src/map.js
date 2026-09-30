@@ -172,7 +172,8 @@ export class MapView {
         this.proj.translate([tx + (x0 + x1) / 2 - fx, ty]);
         this.minK = 1 / grow;
       }
-      visibleW = Math.min(x1 - x0, (sx1 - sx0) / this.minK);
+      this.sphereW = (sx1 - sx0) / this.minK;
+      visibleW = Math.min(x1 - x0, this.sphereW);
     } else {
       const r = Math.min(x1 - x0, y1 - y0) * 0.46 * this.globeK;
       this.proj = d3.geoOrthographic().rotate(this.rotate).translate([(x0 + x1) / 2, (y0 + y1) / 2]).scale(r).clipAngle(90).precision(0.4);
@@ -356,9 +357,10 @@ export class MapView {
         const q = this.proj(p);
         out.push(q ? [q[0] * k + x, q[1] * k + y] : null);
       }
-      // Break segments that jump across the antimeridian.
+      // Break segments that jump across the antimeridian: a real step is far shorter than half the world's width
+      // (the map's width, not the viewport's — the map can be narrower than half the screen beside the panels).
       for (let i = 1; i < out.length; i++) {
-        if (out[i] && out[i - 1] && Math.abs(out[i][0] - out[i - 1][0]) > this.w * 0.5 * k) out.splice(i, 0, null), i++;
+        if (out[i] && out[i - 1] && Math.abs(out[i][0] - out[i - 1][0]) > this.sphereW * 0.5 * k) out.splice(i, 0, null), i++;
       }
       return out;
     }
