@@ -1,4 +1,4 @@
-TerraEnergy data build — 2026-09-30
+TerraEnergy data build — 2026-10-07
 Loading sources
   EI 2026: 79 countries; EIA updated 2026-09-03T20:46:44-04:00
 Geometry
@@ -36,11 +36,11 @@ Validation: routed 2025 flows through chokepoints vs EIA 1H25 (mb/d, Bcf/d)
   hormuz_oil_cons_share: KOR 71%, PAK 68%, MUS 67%, GRC 63%, UGA 60%, JPN 59%, SGP 55%, KEN 55%, LTU 52%, ZMB 48%, TWN 45%, TZA 44%, IND 41%, ZAF 41%
   hormuz_lng_share: PAK 99%, HKG 83%, IND 59%, SGP 43%, TWN 35%, ITA 33%, CHN 30%, KWT 30%, THA 21%, BEL 17%, KOR 16%, PHL 10%, JOR 9%, SWE 9%
 Writing outputs
-  original customs declarations: 13024
+  original customs declarations: 13020
   wrote countries.json             31.1 KB
   wrote latest.json               188.8 KB
   wrote history.json             1031.0 KB
   wrote flows.json                818.5 KB
-  wrote chokepoints.json          220.7 KB
+  wrote chokepoints.json          221.8 KB
   wrote context.json               28.5 KB
   wrote meta.json                   5.1 KB
